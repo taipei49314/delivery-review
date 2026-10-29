@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "report_id": "synthetic-example",
+  "observed_at": "2026-10-29T00:00:00Z",
+  "mode": "live",
+  "subject": {
+    "repository_id": 9001,
+    "repository_full_name": "fixture-owner/fixture-repo",
+    "head_repository_id": 9001,
+    "pr_number": 7,
+    "base_tip_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "merge_base_sha": "9999999999999999999999999999999999999999",
+    "merge_commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "merge_parents": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+  },
+  "selected_runs": [
+    {
+      "workflow_id": 101,
+      "run_id": 1001,
+      "attempt": 1
+    }
+  ],
+  "recheck": {
+    "observed_at": "2026-10-29T00:00:01Z",
+    "base_tip_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "selected_runs": [
+      {
+        "workflow_id": 101,
+        "run_id": 1001,
+        "attempt": 1
+      }
+    ]
+  },
+  "policy": {
+    "policy_id": "example-python-pr",
+    "canonical_sha256": "94447ff0109bafadf97faf396deb7ff3f86ae84504345a9e4c8708848941f015"
+  },
+  "collector": {
+    "name": "delivery-review",
+    "version": "0.0.0-m0",
+    "source_sha": "0000000000000000000000000000000000000000"
+  },
+  "engines": [],
+  "evidence": [
+    {
+      "id": "pytest-report",
+      "kind": "test_report",
+      "repository_id": 9001,
+      "subject_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workflow_id": 101,
+      "run_id": 1001,
+      "attempt": 1,
+      "job_id": 2001,
+      "app_id": 15368,
+      "artifact_id": 3001,
+      "job_name": "pytest-linux",
+      "matrix": {},
+      "test_counts": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "conclusion": "success",
+      "binding_level": "workflow_bound",
+      "producer_proof": {
+        "method": "github_api_referenced_workflow",
+        "repository_id": 9002,
+        "path": ".github/workflows/pytest.yml",
+        "sha": "dddddddddddddddddddddddddddddddddddddddd",
+        "api_response_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "status": "observed",
+      "raw_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "source_url": null,
+      "messages": [
+        "Synthetic fixture; not an observed GitHub execution."
+      ],
+      "artifact_sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "pytest-linux",
+      "kind": "test_report",
+      "required": true,
+      "minimum_binding": "workflow_bound",
+      "outcome": "satisfied",
+      "effect": "clear",
+      "evidence_ids": [
+        "pytest-report"
+      ],
+      "reason_codes": []
+    }
+  ],
+  "state": {
+    "evidence": "complete",
+    "freshness": "current",
+    "policy": "clear"
+  },
+  "ready_for_review": true,
+  "exit_code": 0,
+  "action_items": [],
+  "limitations": [
+    "synthetic_contract_fixture",
+    "No collector, scanner, GitHub execution, or live validation has run."
+  ],
+  "raw_inventory": []
+}

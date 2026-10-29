@@ -1,0 +1,15 @@
+{
+  "number": 7,
+  "state": "open",
+  "head": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "ref": "feature/synthetic",
+    "repo": {"id": 9001, "full_name": "fixture-owner/fixture-repo"}
+  },
+  "base": {
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ref": "main",
+    "repo": {"id": 9001, "full_name": "fixture-owner/fixture-repo"}
+  },
+  "merge_commit_sha": "cccccccccccccccccccccccccccccccccccccccc"
+}

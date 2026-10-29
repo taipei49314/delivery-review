@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:delivery-review:contract:1:engine-lock",
+  "title": "Delivery Review contract 1: engine-lock",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "lock_kind": {
+      "const": "engine_candidates"
+    },
+    "engines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "enum": [
+              "checkwash",
+              "pinwash",
+              "ledgerwash"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "artifact": {
+            "type": "object",
+            "properties": {
+              "filename": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2048,
+                "pattern": "^https://"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "filename",
+              "url",
+              "size_bytes",
+              "sha256"
+            ],
+            "additionalProperties": false
+          },
+          "contracts": {
+            "type": "object",
+            "properties": {
+              "documented_public_json_schema": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "source_urls": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri",
+                  "maxLength": 2048,
+                  "pattern": "^https://"
+                },
+                "minItems": 1,
+                "maxItems": 1000
+              },
+              "verification": {
+                "const": "documentation_review_only"
+              }
+            },
+            "required": [
+              "documented_public_json_schema",
+              "source_urls",
+              "verification"
+            ],
+            "additionalProperties": false
+          },
+          "verification": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "candidate_byte_verified"
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "name",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              "wheel": {
+                "type": "object",
+                "properties": {
+                  "member_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "inventory_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "metadata_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "record_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "record_verified_files": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "member_count",
+                  "inventory_sha256",
+                  "metadata_sha256",
+                  "record_sha256",
+                  "record_verified_files"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "metadata",
+              "wheel"
+            ],
+            "additionalProperties": false
+          },
+          "integration_status": {
+            "const": "NOT_RUN"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "artifact",
+          "contracts",
+          "verification",
+          "integration_status"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 3,
+      "maxItems": 3
+    }
+  },
+  "required": [
+    "schema_version",
+    "lock_kind",
+    "engines"
+  ],
+  "additionalProperties": false
+}

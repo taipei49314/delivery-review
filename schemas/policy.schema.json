@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:delivery-review:contract:1:policy",
+  "title": "Delivery Review contract 1: policy",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "policy_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+    },
+    "repository_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "origin": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "external_file",
+            "approved_git_blob"
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "allowed_source_modes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "pr_head",
+          "github_merge"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 2
+    },
+    "engine_pins": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/pin"
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/requirement"
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expanded_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "archive_members": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scanner_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "artifact_bytes",
+        "expanded_bytes",
+        "archive_members",
+        "scanner_seconds"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "policy_id",
+    "repository_id",
+    "origin",
+    "allowed_source_modes",
+    "engine_pins",
+    "requirements",
+    "limits"
+  ],
+  "additionalProperties": false
+}

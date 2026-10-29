@@ -1,0 +1,110 @@
+{
+  "contract_version": 1,
+  "milestone": "M0",
+  "frozen_on": "2026-10-29",
+  "hash_scope": "exact_file_bytes",
+  "integration_status": "NOT_RUN",
+  "note": "Reviewed baseline for accidental-change detection, not a signature. Case byte and expected-output hashes are transitively frozen through acceptance/manifest.json. Changes require a documented amendment; breaking semantics require a contract version change.",
+  "files": [
+    {
+      "path": "acceptance/manifest.json",
+      "sha256": "7903565caa860f5e88df2e833d0df678d97a8fe1535a6b3119023d33ec2a73fe",
+      "size_bytes": 12816
+    },
+    {
+      "path": "docs/ACCEPTANCE.md",
+      "sha256": "f1d74c51b25ff5e3709609b06f8846df88caab1fbe5eca14465b9f283d3d5a57",
+      "size_bytes": 11873
+    },
+    {
+      "path": "docs/CONTRACT.md",
+      "sha256": "010f914d8120e625e09d5b9d31a1ffe22446bdaf29fe21210b17a318fad3b574",
+      "size_bytes": 15815
+    },
+    {
+      "path": "examples/acceptance-template.json",
+      "sha256": "87d2f3fbda1bbe785603a7e4c7f89bff0c9ad38502915ad6172b855b5bb4bc04",
+      "size_bytes": 5652
+    },
+    {
+      "path": "examples/policy.json",
+      "sha256": "8d9e621c6e3f4449b802b06dbb2bd1d47ce77152feb538090399c637681e2b26",
+      "size_bytes": 1355
+    },
+    {
+      "path": "examples/receipt.json",
+      "sha256": "822dc7b2c75c6055489aacaaecc051bedfcbbda94ab39e71c2022d66dc362f84",
+      "size_bytes": 1135
+    },
+    {
+      "path": "examples/report.json",
+      "sha256": "1c2405597abfbc7cbba7e5adb45444f387ea1731f82ec11b51ae3c9d8e830e45",
+      "size_bytes": 3213
+    },
+    {
+      "path": "fixtures/github/README.md",
+      "sha256": "d9bc2d8f954114f55b38b9dd30ddc5259359ef16bb3f39394bf6d320d2559025",
+      "size_bytes": 1349
+    },
+    {
+      "path": "fixtures/github/artifacts.json",
+      "sha256": "4ef00edd58341a1615b253692c094e37b0ffaaa414bcec84cf59e80711bc9347",
+      "size_bytes": 485
+    },
+    {
+      "path": "fixtures/github/jobs-attempt1.json",
+      "sha256": "1f98818d6d695d9df31f0779f98c0e786204d7196afef8cb5c86c93a49841233",
+      "size_bytes": 455
+    },
+    {
+      "path": "fixtures/github/merge-commit.json",
+      "sha256": "6a79ef14f092b7512e0ac254ebe63f9a87d121512b5335e7601da53a80c8320d",
+      "size_bytes": 189
+    },
+    {
+      "path": "fixtures/github/pr-start.json",
+      "sha256": "bbefcd4a34c36ad632df0cdf491714f03a4384d0fb8d05eba1bcb2827b89ff60",
+      "size_bytes": 434
+    },
+    {
+      "path": "fixtures/github/workflow-run-attempt1.json",
+      "sha256": "88c72d8febd25075544a6cca91c7f3fb317249464b04476d7d0d3c01af9102d8",
+      "size_bytes": 740
+    },
+    {
+      "path": "locks/engine-candidates.json",
+      "sha256": "3a4ac2ae21d616b7e0d89e4f335a6518a6036ac59dcde25370a76685414124e4",
+      "size_bytes": 4165
+    },
+    {
+      "path": "schemas/acceptance-case.schema.json",
+      "sha256": "7c2de76f99d2142dca428536048ef20aae4fe919f5188cae5471fa43f0616582",
+      "size_bytes": 2719
+    },
+    {
+      "path": "schemas/common.schema.json",
+      "sha256": "c2fd0119c94748986d5fbbac53037ae74db4e26d3fea510d1892b26eb6d5cdb8",
+      "size_bytes": 18532
+    },
+    {
+      "path": "schemas/engine-lock.schema.json",
+      "sha256": "a9825c5ecc2f5a6053dbf6e178152f9f939332959f40dec23c38fa6899435bc2",
+      "size_bytes": 5159
+    },
+    {
+      "path": "schemas/policy.schema.json",
+      "sha256": "f59554699bd083a170f8dbe59b3149e2aa86708852415e0f865433741dceb7e0",
+      "size_bytes": 2576
+    },
+    {
+      "path": "schemas/receipt.schema.json",
+      "sha256": "f2bb936ebfa9bb3183353ac0490be2e7c9e7190379e63c07dc00bca2c8a9187f",
+      "size_bytes": 5045
+    },
+    {
+      "path": "schemas/report.schema.json",
+      "sha256": "5b72fe8f8947c387dbfd7c7fb9109c94b9881c1d1b48a4d3c2bea77ffcf524a5",
+      "size_bytes": 5695
+    }
+  ]
+}

@@ -1,0 +1,321 @@
+{
+  "schema_version": 1,
+  "case_id": "E17-offline-replay",
+  "family_id": "E17",
+  "title": "Offline replay preserves historical observations without asserting currentness",
+  "origin": "synthetic_contract",
+  "report_role": "preregistered_expected_normalized_output",
+  "scenario": {
+    "description": "Preregistered synthetic contract scenario. Report values are authored expectations, not computed GitHub, parser, or scanner observations.",
+    "facts": [
+      "Saved evidence and policy satisfy the original snapshot's obligations.",
+      "No network refresh occurs; the historical recheck timestamp is retained.",
+      "A future refresh must create a separate evidence directory and leave this history unchanged."
+    ],
+    "raw_fixture_refs": []
+  },
+  "policy": {
+    "schema_version": 1,
+    "policy_id": "example-python-pr",
+    "repository_id": 9001,
+    "origin": {
+      "kind": "external_file",
+      "revision": null
+    },
+    "allowed_source_modes": [
+      "pr_head",
+      "github_merge"
+    ],
+    "engine_pins": [
+      {
+        "name": "checkwash",
+        "version": "0.10.0",
+        "artifact_sha256": "3522d641d589ff9b75ad5e2f510d0884ca2520c32265d8397f0fcef226bc1171"
+      },
+      {
+        "name": "pinwash",
+        "version": "0.1.1",
+        "artifact_sha256": "d002160a73f5affbd4cf3446f676aa2809ef006a12feff77cab5edb4a8c62e03"
+      },
+      {
+        "name": "ledgerwash",
+        "version": "0.5.0",
+        "artifact_sha256": "5a38efe79c38f8d4e2ea25dae231d174e597ffbc5ee2e3df4d312fdb7bc128e9"
+      }
+    ],
+    "requirements": [
+      {
+        "id": "pytest-linux",
+        "kind": "test_report",
+        "required": true,
+        "minimum_binding": "workflow_bound",
+        "selector": {
+          "workflow_id": 101,
+          "app_id": 15368,
+          "job_name": "pytest-linux",
+          "producer_repository_id": 9002,
+          "producer_path": ".github/workflows/pytest.yml",
+          "producer_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "min_tests": 1,
+          "allow_skips": false
+        }
+      },
+      {
+        "id": "checkwash",
+        "kind": "scanner",
+        "required": true,
+        "minimum_binding": "reported",
+        "selector": {
+          "engine": "checkwash"
+        }
+      },
+      {
+        "id": "pinwash",
+        "kind": "scanner",
+        "required": true,
+        "minimum_binding": "reported",
+        "selector": {
+          "engine": "pinwash"
+        }
+      }
+    ],
+    "limits": {
+      "artifact_bytes": 26214400,
+      "expanded_bytes": 104857600,
+      "archive_members": 100,
+      "scanner_seconds": 120
+    }
+  },
+  "report": {
+    "schema_version": 1,
+    "report_id": "expected-E17-offline-replay",
+    "observed_at": "2026-10-29T00:00:00Z",
+    "mode": "offline_replay",
+    "subject": {
+      "repository_id": 9001,
+      "repository_full_name": "fixture-owner/fixture-repo",
+      "head_repository_id": 9001,
+      "pr_number": 7,
+      "base_tip_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "merge_base_sha": "9999999999999999999999999999999999999999",
+      "merge_commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "merge_parents": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
+    },
+    "selected_runs": [
+      {
+        "workflow_id": 101,
+        "run_id": 1001,
+        "attempt": 1
+      }
+    ],
+    "recheck": {
+      "observed_at": "2026-10-29T00:00:01Z",
+      "base_tip_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "selected_runs": [
+        {
+          "workflow_id": 101,
+          "run_id": 1001,
+          "attempt": 1
+        }
+      ]
+    },
+    "policy": {
+      "policy_id": "example-python-pr",
+      "canonical_sha256": "08f7919e996d0b7718d981c9354d81654149ecf78a7321f9eaca41983d347b01"
+    },
+    "collector": {
+      "name": "delivery-review",
+      "version": "0.0.0-m0",
+      "source_sha": "0000000000000000000000000000000000000000"
+    },
+    "engines": [
+      {
+        "name": "checkwash",
+        "version": "0.10.0",
+        "artifact_sha256": "3522d641d589ff9b75ad5e2f510d0884ca2520c32265d8397f0fcef226bc1171",
+        "verdict": "pass",
+        "status": "completed",
+        "exit_code": 0,
+        "raw_report_sha256": "3f5dc1c43944bc952ae4ed3c8a4dd03318398dd9714783de82faec79a39daae4",
+        "evidence_id": "checkwash-evidence",
+        "findings": [],
+        "coverage": {
+          "status": "sufficient",
+          "details": []
+        }
+      },
+      {
+        "name": "pinwash",
+        "version": "0.1.1",
+        "artifact_sha256": "d002160a73f5affbd4cf3446f676aa2809ef006a12feff77cab5edb4a8c62e03",
+        "verdict": "pass",
+        "status": "completed",
+        "exit_code": 0,
+        "raw_report_sha256": "3c539f92ca56d6a0559ee4c1002677669e07418391be167d0291133a01d0fd42",
+        "evidence_id": "pinwash-evidence",
+        "findings": [],
+        "coverage": {
+          "status": "sufficient",
+          "details": []
+        }
+      }
+    ],
+    "evidence": [
+      {
+        "id": "pytest-report",
+        "kind": "test_report",
+        "repository_id": 9001,
+        "subject_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workflow_id": 101,
+        "run_id": 1001,
+        "attempt": 1,
+        "job_id": 2001,
+        "app_id": 15368,
+        "artifact_id": 3001,
+        "job_name": "pytest-linux",
+        "matrix": {},
+        "test_counts": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "conclusion": "success",
+        "binding_level": "workflow_bound",
+        "producer_proof": {
+          "method": "github_api_referenced_workflow",
+          "repository_id": 9002,
+          "path": ".github/workflows/pytest.yml",
+          "sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "api_response_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "status": "observed",
+        "raw_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "source_url": null,
+        "messages": [
+          "Synthetic fixture; not an observed GitHub execution."
+        ],
+        "artifact_sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      {
+        "id": "checkwash-evidence",
+        "kind": "scanner",
+        "repository_id": 9001,
+        "subject_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workflow_id": null,
+        "run_id": null,
+        "attempt": null,
+        "job_id": null,
+        "app_id": null,
+        "artifact_id": null,
+        "job_name": null,
+        "matrix": {},
+        "test_counts": null,
+        "conclusion": null,
+        "binding_level": "reported",
+        "producer_proof": null,
+        "status": "observed",
+        "raw_sha256": "3f5dc1c43944bc952ae4ed3c8a4dd03318398dd9714783de82faec79a39daae4",
+        "source_url": null,
+        "messages": [
+          "Synthetic expected evidence; no tool or collector was executed."
+        ],
+        "artifact_sha256": null
+      },
+      {
+        "id": "pinwash-evidence",
+        "kind": "scanner",
+        "repository_id": 9001,
+        "subject_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workflow_id": null,
+        "run_id": null,
+        "attempt": null,
+        "job_id": null,
+        "app_id": null,
+        "artifact_id": null,
+        "job_name": null,
+        "matrix": {},
+        "test_counts": null,
+        "conclusion": null,
+        "binding_level": "reported",
+        "producer_proof": null,
+        "status": "observed",
+        "raw_sha256": "3c539f92ca56d6a0559ee4c1002677669e07418391be167d0291133a01d0fd42",
+        "source_url": null,
+        "messages": [
+          "Synthetic expected evidence; no tool or collector was executed."
+        ],
+        "artifact_sha256": null
+      }
+    ],
+    "obligations": [
+      {
+        "id": "pytest-linux",
+        "kind": "test_report",
+        "required": true,
+        "minimum_binding": "workflow_bound",
+        "outcome": "satisfied",
+        "effect": "clear",
+        "evidence_ids": [
+          "pytest-report"
+        ],
+        "reason_codes": []
+      },
+      {
+        "id": "checkwash",
+        "kind": "scanner",
+        "required": true,
+        "minimum_binding": "reported",
+        "outcome": "satisfied",
+        "effect": "clear",
+        "evidence_ids": [
+          "checkwash-evidence"
+        ],
+        "reason_codes": []
+      },
+      {
+        "id": "pinwash",
+        "kind": "scanner",
+        "required": true,
+        "minimum_binding": "reported",
+        "outcome": "satisfied",
+        "effect": "clear",
+        "evidence_ids": [
+          "pinwash-evidence"
+        ],
+        "reason_codes": []
+      }
+    ],
+    "state": {
+      "evidence": "complete",
+      "freshness": "unknown",
+      "policy": "clear"
+    },
+    "ready_for_review": false,
+    "exit_code": 2,
+    "action_items": [],
+    "limitations": [
+      "synthetic_contract_fixture",
+      "No collector, scanner, GitHub execution, or live validation has run.",
+      "Source binding levels are expected contract labels, not authenticated observations from a live workflow.",
+      "offline_replay_does_not_refresh_github_currentness"
+    ],
+    "raw_inventory": []
+  },
+  "expected": {
+    "state": {
+      "evidence": "complete",
+      "freshness": "unknown",
+      "policy": "clear"
+    },
+    "exit_code": 2,
+    "ready_for_review": false,
+    "reason_codes": []
+  },
+  "full_integration": "NOT_RUN"
+}

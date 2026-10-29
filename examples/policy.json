@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "policy_id": "example-python-pr",
+  "repository_id": 9001,
+  "origin": {
+    "kind": "external_file",
+    "revision": null
+  },
+  "allowed_source_modes": [
+    "pr_head",
+    "github_merge"
+  ],
+  "engine_pins": [
+    {
+      "name": "checkwash",
+      "version": "0.10.0",
+      "artifact_sha256": "3522d641d589ff9b75ad5e2f510d0884ca2520c32265d8397f0fcef226bc1171"
+    },
+    {
+      "name": "pinwash",
+      "version": "0.1.1",
+      "artifact_sha256": "d002160a73f5affbd4cf3446f676aa2809ef006a12feff77cab5edb4a8c62e03"
+    },
+    {
+      "name": "ledgerwash",
+      "version": "0.5.0",
+      "artifact_sha256": "5a38efe79c38f8d4e2ea25dae231d174e597ffbc5ee2e3df4d312fdb7bc128e9"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "pytest-linux",
+      "kind": "test_report",
+      "required": true,
+      "minimum_binding": "workflow_bound",
+      "selector": {
+        "workflow_id": 101,
+        "app_id": 15368,
+        "job_name": "pytest-linux",
+        "producer_repository_id": 9002,
+        "producer_path": ".github/workflows/pytest.yml",
+        "producer_sha": "dddddddddddddddddddddddddddddddddddddddd",
+        "min_tests": 1,
+        "allow_skips": false
+      }
+    }
+  ],
+  "limits": {
+    "artifact_bytes": 26214400,
+    "expanded_bytes": 104857600,
+    "archive_members": 100,
+    "scanner_seconds": 120
+  }
+}

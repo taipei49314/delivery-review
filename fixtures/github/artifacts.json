@@ -1,0 +1,19 @@
+{
+  "total_count": 1,
+  "artifacts": [
+    {
+      "id": 3001,
+      "name": "pytest-evidence-1001-1",
+      "size_in_bytes": 1024,
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "expired": false,
+      "workflow_run": {
+        "id": 1001,
+        "repository_id": 9001,
+        "head_repository_id": 9001,
+        "head_branch": "feature/synthetic",
+        "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  ]
+}

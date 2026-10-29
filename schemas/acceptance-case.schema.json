@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:delivery-review:contract:1:acceptance-case",
+  "title": "Delivery Review contract 1: acceptance-case",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^E(0[1-9]|1[0-8])-[a-z0-9-]+$"
+    },
+    "family_id": {
+      "type": "string",
+      "pattern": "^E(0[1-9]|1[0-8])$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "origin": {
+      "const": "synthetic_contract"
+    },
+    "report_role": {
+      "const": "preregistered_expected_normalized_output"
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 1,
+          "maxItems": 30
+        },
+        "raw_fixture_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "minItems": 0,
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "description",
+        "facts",
+        "raw_fixture_refs"
+      ],
+      "additionalProperties": false
+    },
+    "policy": {
+      "$ref": "urn:delivery-review:contract:1:policy"
+    },
+    "report": {
+      "$ref": "urn:delivery-review:contract:1:report"
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "urn:delivery-review:contract:1:common#/$defs/state"
+        },
+        "exit_code": {
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        },
+        "ready_for_review": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+          },
+          "minItems": 0,
+          "maxItems": 1000
+        }
+      },
+      "required": [
+        "state",
+        "exit_code",
+        "ready_for_review",
+        "reason_codes"
+      ],
+      "additionalProperties": false
+    },
+    "full_integration": {
+      "const": "NOT_RUN"
+    }
+  },
+  "required": [
+    "schema_version",
+    "case_id",
+    "family_id",
+    "title",
+    "origin",
+    "report_role",
+    "scenario",
+    "policy",
+    "report",
+    "expected",
+    "full_integration"
+  ],
+  "additionalProperties": false
+}

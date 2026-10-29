@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:delivery-review:contract:1:report",
+  "title": "Delivery Review contract 1: report",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "mode": {
+      "enum": [
+        "live",
+        "offline_replay"
+      ]
+    },
+    "subject": {
+      "$ref": "urn:delivery-review:contract:1:common#/$defs/subject"
+    },
+    "selected_runs": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/run"
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "recheck": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "observed_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            },
+            "base_tip_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "head_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "selected_runs": {
+              "type": "array",
+              "items": {
+                "$ref": "urn:delivery-review:contract:1:common#/$defs/run"
+              },
+              "minItems": 0,
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "observed_at",
+            "base_tip_sha",
+            "head_sha",
+            "selected_runs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+        },
+        "canonical_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "policy_id",
+        "canonical_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "collector": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "delivery-review"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "source_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "source_sha"
+      ],
+      "additionalProperties": false
+    },
+    "engines": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/engine"
+      },
+      "minItems": 0,
+      "maxItems": 3
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/evidence"
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:delivery-review:contract:1:common#/$defs/obligation"
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "state": {
+      "$ref": "urn:delivery-review:contract:1:common#/$defs/state"
+    },
+    "ready_for_review": {
+      "type": "boolean"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "action_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+          },
+          "obligation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$"
+            },
+            "minItems": 1,
+            "maxItems": 1000
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "id",
+          "obligation_ids",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "raw_inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "observed_at",
+    "mode",
+    "subject",
+    "selected_runs",
+    "recheck",
+    "policy",
+    "collector",
+    "engines",
+    "evidence",
+    "obligations",
+    "state",
+    "ready_for_review",
+    "exit_code",
+    "action_items",
+    "limitations",
+    "raw_inventory"
+  ],
+  "additionalProperties": false
+}

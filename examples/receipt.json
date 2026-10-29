@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "receipt_id": "synthetic-receipt",
+  "recorded_at": "2026-10-29T00:00:00Z",
+  "repository_id": 9001,
+  "head_repository_id": 9001,
+  "pr_number": 7,
+  "provenance": "producer_declared",
+  "source": {
+    "mode": "pr_head",
+    "base_tip_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "checked_out_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "merge_parents": []
+  },
+  "producer": {
+    "repository_id": 9002,
+    "workflow_path": ".github/workflows/pytest.yml",
+    "workflow_sha": "dddddddddddddddddddddddddddddddddddddddd",
+    "run_id": 1001,
+    "attempt": 1,
+    "job_id": 2001
+  },
+  "execution": {
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "--junitxml=report.xml"
+    ],
+    "setup_exit": 0,
+    "test_exit": 0,
+    "collection_exit": 0,
+    "tests": {
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "junit": {
+      "path": "report.xml",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "size_bytes": 123
+    }
+  }
+}

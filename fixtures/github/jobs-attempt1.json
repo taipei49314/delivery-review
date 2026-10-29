@@ -1,0 +1,17 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 2001,
+      "run_id": 1001,
+      "run_attempt": 1,
+      "name": "pytest-linux",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-28T23:51:00Z",
+      "completed_at": "2026-10-28T23:54:00Z",
+      "check_run_url": "https://api.github.com/repos/fixture-owner/fixture-repo/check-runs/4001"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "lock_kind": "engine_candidates",
+  "engines": [
+    {
+      "name": "checkwash",
+      "version": "0.10.0",
+      "artifact": {
+        "filename": "checkwash-0.10.0-py3-none-any.whl",
+        "url": "https://files.pythonhosted.org/packages/95/b8/235b520e522c59344705f19ed51e79adc278577cffac4301acc846ca8b3b/checkwash-0.10.0-py3-none-any.whl",
+        "size_bytes": 973990,
+        "sha256": "3522d641d589ff9b75ad5e2f510d0884ca2520c32265d8397f0fcef226bc1171"
+      },
+      "contracts": {
+        "documented_public_json_schema": "findings v2; adapter validation pending",
+        "source_urls": [
+          "https://pypi.org/pypi/checkwash/0.10.0/json",
+          "https://github.com/taipei49314/checkwash/tree/v0.10.0"
+        ],
+        "verification": "documentation_review_only"
+      },
+      "integration_status": "NOT_RUN",
+      "verification": {
+        "status": "candidate_byte_verified",
+        "metadata": {
+          "name": "checkwash",
+          "version": "0.10.0"
+        },
+        "wheel": {
+          "member_count": 220,
+          "inventory_sha256": "31c40ac17590c29421d0c26d0bbd8fcee5d7d6445b4693e1a49303b36a41cf31",
+          "metadata_sha256": "4d43cf18cde11cc0ce4f9be399b98985d3892135efbfc32fb85dfe6a137940b6",
+          "record_sha256": "06e3237d5098f302891fbba2a640df657e811db425a71915cde01dada4704f78",
+          "record_verified_files": 219
+        }
+      }
+    },
+    {
+      "name": "pinwash",
+      "version": "0.1.1",
+      "artifact": {
+        "filename": "pinwash-0.1.1-py3-none-any.whl",
+        "url": "https://files.pythonhosted.org/packages/e4/a7/81491591ef1d13100f50cd42d27db637fc4480c06db0acbac10093b01489/pinwash-0.1.1-py3-none-any.whl",
+        "size_bytes": 366298,
+        "sha256": "d002160a73f5affbd4cf3446f676aa2809ef006a12feff77cab5edb4a8c62e03"
+      },
+      "contracts": {
+        "documented_public_json_schema": "findings v1; adapter validation pending",
+        "source_urls": [
+          "https://pypi.org/pypi/pinwash/0.1.1/json",
+          "https://github.com/taipei49314/pinwash/blob/ea185125565f2ef5b5b023c02039d1b00e40b462/pinwash/findings.py"
+        ],
+        "verification": "documentation_review_only"
+      },
+      "integration_status": "NOT_RUN",
+      "verification": {
+        "status": "candidate_byte_verified",
+        "metadata": {
+          "name": "pinwash",
+          "version": "0.1.1"
+        },
+        "wheel": {
+          "member_count": 76,
+          "inventory_sha256": "da99f828b1bddf58ffbb431c8f485cbcdb94635ec4354fb700bae16766873a77",
+          "metadata_sha256": "3789d2b612dda4b5129cf4885846ef83ad24d04546f49ccb7962dedae1f7ab67",
+          "record_sha256": "213a5683a2a252bc4a86dcc5a70f25155e9d3c1eba63db1c54c6bada62faedc1",
+          "record_verified_files": 75
+        }
+      }
+    },
+    {
+      "name": "ledgerwash",
+      "version": "0.5.0",
+      "artifact": {
+        "filename": "ledgerwash-0.5.0-py3-none-any.whl",
+        "url": "https://files.pythonhosted.org/packages/c7/67/1bad4203ba82543429216c8e74b91bca8de468d445e97ccf8cacca62db4f/ledgerwash-0.5.0-py3-none-any.whl",
+        "size_bytes": 44492,
+        "sha256": "5a38efe79c38f8d4e2ea25dae231d174e597ffbc5ee2e3df4d312fdb7bc128e9"
+      },
+      "contracts": {
+        "documented_public_json_schema": "findings v2; adapter validation pending",
+        "source_urls": [
+          "https://pypi.org/pypi/ledgerwash/0.5.0/json",
+          "https://github.com/taipei49314/ledgerwash/tree/v0.5.0"
+        ],
+        "verification": "documentation_review_only"
+      },
+      "integration_status": "NOT_RUN",
+      "verification": {
+        "status": "candidate_byte_verified",
+        "metadata": {
+          "name": "ledgerwash",
+          "version": "0.5.0"
+        },
+        "wheel": {
+          "member_count": 26,
+          "inventory_sha256": "613f930036c4702d75dbd416ee1d6b94f40e86aa73ed2b07a84b285e200449d1",
+          "metadata_sha256": "48307cdf471a869f0071aee455e34b8bb378832d8fc25591a5d0ccda69ccafc6",
+          "record_sha256": "c75da74c70562e4d30f7e965767a77789225181f32f6a5facbc300e94bcabf1a",
+          "record_verified_files": 25
+        }
+      }
+    }
+  ]
+}
