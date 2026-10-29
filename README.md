@@ -21,9 +21,9 @@ All E01–E18 product integrations are **NOT_RUN**.
 - Candidate locks for Checkwash 0.10.0, Pinwash 0.1.1 and Ledgerwash 0.5.0.
   Their published wheels were downloaded and checked by SHA-256, METADATA and
   RECORD without installation or execution. Adapter compatibility is NOT_RUN.
-- Configured Linux/Python 3.11 and Windows/Python 3.12 contract CI using hashed
-  dependencies. Hosted execution is currently blocked by GitHub account billing;
-  [M0-VALIDATION.md](docs/M0-VALIDATION.md) records the local results and failed-start run.
+- EC pool workload `m0-contracts`, using the existing Windows/Python 3.12
+  generation and hash-pinned dependencies. See [CI-POOL.md](docs/CI-POOL.md) for
+  dispatch and receipt rules, and [M0-VALIDATION.md](docs/M0-VALIDATION.md) for results.
 
 ## Decisions
 
@@ -63,6 +63,13 @@ These commands check authored contracts and expected normalized reports. They
 do not run the 40 scenarios against a product, execute engines or query GitHub.
 Wheel acquisition is a separate optional operation documented in
 [ENGINE-LOCK.md](docs/ENGINE-LOCK.md), and is not part of ordinary contract CI.
+
+Actions validation is dispatched from the existing
+[EC pool workflow](https://github.com/taipei49314/estate-consolidation/actions/workflows/pool-workload.yml)
+at a reviewed product commit. EC publishes `ec / m0-contracts` on that commit.
+The earlier GitHub-hosted matrix has been removed. A product push alone does
+not dispatch the central pool; use the recorded EC admission/dispatch procedure.
+This lane qualifies Windows/Python 3.12 only.
 
 ## Repository map
 

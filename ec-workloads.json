@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "workloads": {
+    "m0-contracts": {
+      "description": "Validate the exact reviewed delivery-review commit on the EC Windows Python 3.12 pool. Create a fresh job-local virtual environment; install only binary dependencies pinned by version and SHA-256 in requirements-contract.txt from public PyPI without cache. Run the frozen M0 schema/example/case checks and the complete unittest suite; reject zero tests, failures, errors, skips and expected failures. Preserve source SHA, runtime, commands, native exits, raw logs, unittest counts and file digests in private EC receipts, and report the result on the reviewed product commit. No PR collection, installed Wash engine execution, product integration acceptance, model calls, deployments, host/runner/profile changes or workload credentials. No free parameters; timeout 10 minutes.",
+      "entry": "pool/run_contracts.py",
+      "profile": "profile-ec-integrity",
+      "timeout_minutes": 10,
+      "cache": false,
+      "parameters": {}
+    }
+  }
+}
