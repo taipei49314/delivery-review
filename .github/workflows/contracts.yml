@@ -30,7 +30,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install pinned contract dependencies
-        run: python -m pip install --require-hashes --only-binary=:all: -r requirements-contract.txt
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-contract.txt
       - name: Validate frozen contract examples
         run: python tools/validate_contracts.py
       - name: Run contract and negative-control tests
