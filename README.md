@@ -21,7 +21,9 @@ All E01–E18 product integrations are **NOT_RUN**.
 - Candidate locks for Checkwash 0.10.0, Pinwash 0.1.1 and Ledgerwash 0.5.0.
   Their published wheels were downloaded and checked by SHA-256, METADATA and
   RECORD without installation or execution. Adapter compatibility is NOT_RUN.
-- Linux/Python 3.11 and Windows/Python 3.12 contract CI using hashed dependencies.
+- Configured Linux/Python 3.11 and Windows/Python 3.12 contract CI using hashed
+  dependencies. Hosted execution is currently blocked by GitHub account billing;
+  [M0-VALIDATION.md](docs/M0-VALIDATION.md) records the local results and failed-start run.
 
 ## Decisions
 
