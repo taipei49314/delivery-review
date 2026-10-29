@@ -10,7 +10,7 @@ Product release: **not released** (`0.0.0` source-checkout validation tooling).
 | E01 representative GitHub fragments | Authored; collector mapping NOT_RUN. |
 | Engine wheel SHA-256, METADATA and RECORD verification | Completed for three candidates; see ENGINE-LOCK.md. |
 | Local M0 validation on Windows / Python 3.12 | PASS: 51 tests, 40 synthetic cases and 20 frozen files; see M0-VALIDATION.md. |
-| EC pool Windows / Python 3.12 CI | Workload entry and App access prepared; first pool verification pending. |
+| EC pool Windows / Python 3.12 CI | `m0-contracts` is the configured route; execution results are the per-commit `ec / m0-contracts` check and EC receipt. |
 | Linux CI | NOT_RUN; no qualified Linux pool lane for this repository. |
 | Installed engine CLI/JSON adapters | NOT_RUN. |
 | GitHub collector, evidence bundle/replay and final live recheck | Not implemented. |

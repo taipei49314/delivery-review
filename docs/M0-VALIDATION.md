@@ -47,9 +47,23 @@ The earlier initial run failed to parse an unquoted YAML command containing
 the second run's populated job matrix confirms workflow parsing succeeded.
 
 No billing settings, spending limits or repository visibility were changed.
-After account eligibility is restored, dispatch `M0 contracts` against current
-main and inspect both jobs. Do not substitute the earlier local result for
+This run is retained as history. The user subsequently instructed
+`action走ci pool`; the hosted workflow was removed. Use the EC route below for
+current validation. Do not substitute a local or Windows pool result for
 hosted cross-platform validation.
+
+## Current route: EC pool
+
+T-628 admits `m0-contracts` through the existing EC Windows/Python 3.12 pool.
+Its entry uses the same pinned dependencies, frozen contracts and full unittest
+suite, with raw logs and structured counts in private EC receipts. The native
+`ec / m0-contracts` check identifies the exact product commit and links to its
+actual Actions run. See [CI-POOL.md](CI-POOL.md) for the procedure and record paths.
+
+Pool execution results are attached to the tested commit by EC, rather than
+rewriting this historical local/hosted record. Require a successful native run,
+matching source and passing raw workload receipt before accepting a pool result.
+Product integrations and Linux qualification remain NOT_RUN.
 
 ## Remaining implementation gates
 
