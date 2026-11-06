@@ -9,6 +9,10 @@ from referencing import Registry
 from .contracts import ContractError, _offline_only, load_document, loads_strict, require
 
 ROOT = Path(__file__).resolve().parents[2]
+_PROFILE_VALIDATOR = Draft202012Validator(
+    load_document(ROOT / "formats/github-observation-profile-v1.schema.json"),
+    registry=Registry(retrieve=_offline_only),
+)
 
 
 def load_observation_profile(raw: bytes) -> dict:
@@ -19,9 +23,7 @@ def load_observation_profile(raw: bytes) -> dict:
     """
     require(type(raw) is bytes, "observation profile must be original bytes")
     profile = loads_strict(raw)
-    schema = load_document(ROOT / "formats/github-observation-profile-v1.schema.json")
-    validator = Draft202012Validator(schema, registry=Registry(retrieve=_offline_only))
-    errors = sorted(validator.iter_errors(profile), key=lambda error: str(list(error.absolute_path)))
+    errors = sorted(_PROFILE_VALIDATOR.iter_errors(profile), key=lambda error: str(list(error.absolute_path)))
     if errors:
         raise ContractError("invalid observation profile: " + errors[0].message)
     workflows = profile["workflows"]

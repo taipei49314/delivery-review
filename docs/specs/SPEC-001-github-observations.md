@@ -12,13 +12,15 @@ The words MUST, MUST NOT and SHOULD express implementation requirements. The
 decision and compatibility rationale is in
 [ADR-001](../amendments/ADR-001-observation-profile.md).
 
-Implementation status: the profile schema/validator and a pure workflow-run
-selection kernel are implemented. The kernel consumes saved listing body bytes
-and page metadata, performs no IO and returns run-selection diagnostics only.
-Its listing `run_attempt`, checkout and producer identity are not qualified.
-It is not yet the complete capture reader, live transport, mapper or observation
-command specified below. See [field feasibility](SPEC-001-feasibility.md) for
-separately recorded public API research. None of these files is a release receipt.
+Implementation status: the profile validator, raw capture/reader, bounded GET
+transport, pure mapper and inspect/verify/replay/refresh development commands are
+implemented. See [usage and boundaries](../GITHUB-OBSERVATIONS.md). Synthetic
+controls cover mapping and storage behavior; controlled live and independent
+qualification remain separate gates. The standalone selection kernel still
+leaves its listing attempt unconfirmed; the full mapper requires current-run and
+attempt records. Checkout and producer identity remain unestablished.
+See [field feasibility](SPEC-001-feasibility.md) for separately recorded public
+API research. None of these files is a release receipt.
 
 The machine-readable profile is
 [`formats/github-observation-profile-v1.schema.json`](../../formats/github-observation-profile-v1.schema.json),

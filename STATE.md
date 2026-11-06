@@ -1,6 +1,6 @@
 # Implementation state
 
-Milestone: **M1 in progress — SPEC-001 and raw workflow-run selection**.
+Milestone: **M1 in progress — raw GitHub observation capture and replay**.
 M0 contract v1 and preregistered acceptance cases remain frozen.
 Product release: **not released** (`0.0.0` source-checkout tooling).
 
@@ -18,9 +18,11 @@ Product release: **not released** (`0.0.0` source-checkout tooling).
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
 | Raw workflow-run selection | Pure kernel implemented with authored byte/page controls; not a full provider. Listing attempt and test checkout remain unconfirmed. |
 | Public API feasibility | Read-only field probes recorded in docs/specs/SPEC-001-feasibility.md; no product integration qualification. |
-| GitHub capture/transport, latest-attempt confirmation, artifact transport and final live recheck | Not implemented. |
+| Raw GitHub capture/reader, bounded GET transport and current-run/attempt/job/check mapping | Implemented with synthetic controls; see docs/GITHUB-OBSERVATIONS.md. Controlled live qualification remains pending. |
+| Observation inspect/verify/replay/refresh, final recheck and JSON/Markdown output | Implemented as source-checkout preview; raw replay uses the same pure mapper. No delivery readiness or producer claim. |
+| Artifact transport | Not implemented. |
 | Qualified producer workflow and pytest/JUnit parser | Not implemented. |
-| Product JSON/Markdown/HTML reports | Replay emits a contract-v1 JSON report; live report flow and Markdown/HTML rendering are not implemented. |
+| Product JSON/Markdown/HTML reports | Saved-report replay emits contract-v1 JSON. Observation JSON/Markdown are separate; full delivery reports and HTML remain unimplemented. |
 | E01–E18 product integration | NOT_RUN. |
 
 The normative baseline is recorded in `acceptance/contract-freeze.json`.
@@ -38,11 +40,10 @@ instruction, Actions now uses the existing EC pool through `m0-contracts`; see
 `docs/CI-POOL.md`. The hosted workflow has been removed, and its old result is
 retained as history. A Windows pool pass does not qualify Linux.
 
-Next gate: implement the bounded SPEC-001 raw capture/reader and GET transport,
-connect current-run/attempt/job/check observations and final recheck, then qualify
-a controlled same-repository PR path. The pure selector is only the first
-mapping increment; full raw replay and online refresh remain unimplemented.
-Producer/JUnit and scanner qualification follow the standard end-to-end path.
+Next gate: record real source-pinned API smoke results, qualify a controlled
+same-repository PR path and establish independent reproduction. Producer/source
+proof, artifact/JUnit and scanner qualification follow the standard public
+end-to-end path. Platform metadata alone cannot satisfy those obligations.
 Keep expected outputs fixed;
 record any necessary contract amendment with its reason and affected cases.
 

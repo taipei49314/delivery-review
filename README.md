@@ -5,11 +5,12 @@ The planned product connects Checkwash, Pinwash and optional Ledgerwash results
 with the PR's source identity, GitHub Actions execution and pytest evidence.
 Its output supports human review; it does not prove task correctness.
 
-**Current milestone: M1 in progress — public observation spec and raw run selection.**
-The M0 contracts and acceptance specifications remain frozen. The first M1 slice
-preserves raw bytes and replays saved normalized observations; it does not derive
-facts from GitHub responses or authenticate a producer. There is no working PR
-inspection CLI yet. All E01–E18 product integrations remain **NOT_RUN**.
+**Current milestone: M1 in progress — raw GitHub observations and offline replay.**
+The M0 contracts and acceptance specifications remain frozen. A source-checkout
+CLI now captures GitHub metadata and derives platform observations, including
+current-run/attempt/job/check associations and final rechecks. Offline replay uses
+the same mapper over preserved raw bytes. This does not authenticate a producer
+or decide delivery readiness. All E01–E18 product integrations remain **NOT_RUN**.
 
 The open-source implementation direction is now defined by
 [SPEC-001](docs/specs/SPEC-001-github-observations.md) and
@@ -26,6 +27,10 @@ qualification. This profile is deliberately separate from delivery readiness.
   cherry-picking and preserves association gaps; it does not confirm checkout or
   latest attempt. [Public API probes](docs/specs/SPEC-001-feasibility.md) are
   field research, not successful product integration.
+- A bounded GET collector, create-once raw captures, pure observations mapper,
+  JSON/Markdown output and inspect/verify/replay/refresh development commands.
+  See [GITHUB-OBSERVATIONS.md](docs/GITHUB-OBSERVATIONS.md) for setup, semantics
+  and the limits of these platform observations.
 - Create-once local evidence bundles, bounded integrity verification and offline
   replay into a new bundle. See [EVIDENCE-BUNDLES.md](docs/EVIDENCE-BUNDLES.md) for
   the API, commands, format and limitations.
@@ -75,8 +80,8 @@ python -m unittest discover -s tests -v
 ```
 
 The validator checks the frozen M0 contracts. The unittest suite also exercises
-M1 storage, replay, profile validation and raw run selection with controlled
-synthetic inputs. These checks do not run
+M1 storage, replay, profile validation, HTTP boundaries, acquisition and raw
+mapping with controlled synthetic inputs. These checks do not run
 the 40 preregistered scenarios through a complete product, execute engines or
 query GitHub.
 Wheel acquisition is a separate optional operation documented in
@@ -118,6 +123,7 @@ bundle, use the API and synthetic walkthrough in
 | [fixtures/github/](fixtures/github/) | Authored provider fragments; mapping is NOT_RUN. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component boundaries, reuse and milestones. |
 | [docs/EVIDENCE-BUNDLES.md](docs/EVIDENCE-BUNDLES.md) | Implemented local bundle format, storage API and offline replay. |
+| [docs/GITHUB-OBSERVATIONS.md](docs/GITHUB-OBSERVATIONS.md) | Raw capture/mapper and the platform-observation CLI preview. |
 | [docs/specs/SPEC-001-github-observations.md](docs/specs/SPEC-001-github-observations.md) | Target raw GitHub capture, observations and replay; implemented subset is stated explicitly. |
 | [docs/amendments/ADR-001-observation-profile.md](docs/amendments/ADR-001-observation-profile.md) | Additive observation format and unchanged readiness/release requirements. |
 | [docs/PRODUCT-PLAN-v0.1.md](docs/PRODUCT-PLAN-v0.1.md) | Original planning context; frozen contract wins if wording differs. |
@@ -126,13 +132,10 @@ bundle, use the API and synthetic walkthrough in
 
 ## Remaining M1 work
 
-The next slice adds bounded raw capture/reading and read-only GitHub transport,
-then connects the run-selection kernel to current-run/attempt/job/check mapping,
-final live rechecks and full raw replay. A dedicated same-repository live fixture
-PR must establish the platform relationships independently. Saved normalized
-replay is not evidence that these integrations have run. Producer qualification,
-artifact transport, pytest parsing and engine adapters follow the standard public
-end-to-end path; observation-only output cannot substitute for their evidence.
+The raw observation path now needs controlled same-repository live qualification
+and independent reproduction. Producer qualification, artifact transport, pytest
+parsing and engine adapters follow the standard public end-to-end path. Platform
+observations and saved normalized replay cannot substitute for their evidence.
 
 This is an independent private incubation repository. Existing Wash engines
 remain separately versioned; their source and historical corpus are not vendored.
