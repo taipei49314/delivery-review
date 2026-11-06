@@ -428,6 +428,33 @@ def map_artifact_capture(capture: ArtifactCapture, *, limits=ArtifactLimits()):
 
 
 @_boundary
+def rejected_archive_for_binding(capture: ArtifactCapture, *, limits=ArtifactLimits()):
+    """Retain a fully received contradictory ZIP for a v2 binder's negative proof.
+
+This never returns a selected/authenticated artifact. Only a uniquely selected,
+original HTTP-200 complete body whose bytes contradict its independent metadata
+is returned. Partial data, failed transport and ambiguous acquisition stay gaps.
+Historical mapping output and its archive-selection semantics are unchanged.
+"""
+    observed = map_artifact_capture(capture, limits=limits)
+    if observed["reason_codes"] != ["artifact_archive_mismatch"] or observed["metadata"] is None:
+        return None
+    manifest, records, _ = _parse(capture.manifest_bytes, capture.raw_files, limits)
+    path = artifact_path("archive", manifest["inputs"]["repository"]["full_name"], observed["artifact_id"])
+    archives = [row for row in records if row["kind"] == "archive"]
+    if len(archives) != 1 or archives[0]["request_path"] != path:
+        return None
+    response = archives[0]["payload"]["response"]
+    raw = response["body"]
+    if response["status_code"] != 200 or response["complete"] is not True or response["error"] is not None or raw is None:
+        return None
+    metadata = loads_strict(observed["metadata"]["body_bytes"])
+    if len(raw) == metadata["size_in_bytes"] and "sha256:" + _sha(raw) == metadata["digest"]:
+        return None
+    return raw
+
+
+@_boundary
 def collect_artifacts(*, repository, run_id, run_attempt, check_run_id, destination, transport,
                       attestation_transport, collector, clock=_now, limits=ArtifactLimits()):
     _need(type(limits) is ArtifactLimits, "invalid_artifact_limits")

@@ -20,6 +20,7 @@ def prepare(*, repository, repository_id, workflow_id, job_name, producer_sha, s
             or type(source_mode) is not str or source_mode not in PRODUCER_PATHS):
         raise ValueError('invalid reference identity')
     profile = loads_strict((PROJECT / 'examples/inspection/profile.json').read_bytes())
+    profile['profile_version'] = 2
     profile['name'] = 'authored-public-reference'
     profile['policy'].update(repository_id=repository_id, allowed_source_modes=[source_mode])
     profile['github']['profile_id'] = 'authored-public-reference-observations'

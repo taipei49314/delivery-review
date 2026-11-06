@@ -72,7 +72,7 @@ class InspectionProfileTests(unittest.TestCase):
             self.assertNotEqual(canonical_digest(original["policy"]), canonical_digest(sealed["policy"]))
 
     def test_unknown_versions_fields_and_unsupported_protocols_are_not_sealed(self):
-        mutations = [lambda p: p.update(profile_version=True), lambda p: p.update(profile_version=2),
+        mutations = [lambda p: p.update(profile_version=True), lambda p: p.update(profile_version=3),
                      lambda p: p.update(extra="ignored"), lambda p: p["policy"].update(repository_id=999),
                      lambda p: p["producers"]["pytest-linux"].update(dialect="generic-junit"),
                      lambda p: p["producers"]["pytest-linux"].update(junit_member="../junit.xml"),

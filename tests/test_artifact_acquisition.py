@@ -112,6 +112,26 @@ class ArtifactCaptureTests(unittest.TestCase):
             attestation_transport=self.attestation_transport, collector=COLLECTOR,
             clock=lambda: STAMP, **changes)
 
+    def test_rejected_original_bytes_are_available_only_for_complete_digest_contradictions(self):
+        mismatch = candidate(digest="sha256:" + "0" * 64)
+        for index, condition in enumerate(("complete", "partial", "unavailable", "transport-error")):
+            with self.subTest(condition=condition):
+                self.destination = self.root / str(index)
+                archive = response(ARCHIVE)
+                if condition == "partial":
+                    archive["response"]["complete"] = False
+                    archive["response"]["error"] = {"code": "response_limit"}
+                elif condition == "unavailable":
+                    archive["response"]["status_code"] = 404
+                    archive["response"]["error"] = {"code": "resource_unavailable"}
+                elif condition == "transport-error":
+                    archive["response"]["error"] = {"code": "transport_error"}
+                capture = self.collect([listing([mismatch]), response(mismatch), archive])
+                self.assertIsNone(artifacts.map_artifact_capture(capture)["archive_bytes"])
+                rejected = artifacts.rejected_archive_for_binding(capture)
+                self.assertEqual(ARCHIVE if condition == "complete" else None, rejected)
+                self.assertIn(ARCHIVE, capture.raw_files.values())
+
     def test_complete_capture_replays_original_metadata_archive_and_unsigned_bundle(self):
         capture = self.collect()
         mapped = artifacts.map_artifact_capture(capture)

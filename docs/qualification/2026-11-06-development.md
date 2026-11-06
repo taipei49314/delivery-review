@@ -16,6 +16,10 @@ inherit an earlier commit's test receipt. Frozen expectations remain unchanged.
 | `8bb4337d5c7f643e10acd56b5fe1fc28a542fdd8` | Existing EC Windows / Python 3.12.10 lane | Old 90-second test-step limit expired. No completed unittest result; retained as a failed run. |
 | `1fa5c2892cac5ab4937b0755bbe69450037ee013` | Existing EC Windows / Python 3.12.10 lane | 527 tests, zero failures/errors/skips; 159.297-second test step, 166.422-second workload. Frozen validator and tracked-source cleanliness passed. |
 | `73559527ab1bfc75b85da93e6ce634e6ec1c2e88` | Clean native Linux / official Python 3.11.16 | 535 tests passed. Frozen validator, clean build, fresh installation, packaged resources, collector identity and byte-identical installed observation replay passed. |
+| `078c032654f98249a2799588dd3bb82032a37d2e` | Clean native Linux / official Python 3.11.16 | 549 tests passed in 22.778 seconds. Frozen validator, build, fresh install, packaged resources, collector identity and byte-identical installed observation replay passed; source stayed clean. |
+| `078c032` runtime with pending documentation-only changes | Local Windows / Python 3.12 | All 549 tests passed in 257.183 seconds. This working-tree run is separate from exact-commit pool CI. |
+| `078c032654f98249a2799588dd3bb82032a37d2e` | Existing EC Windows / Python 3.12.10 lane | 549 tests, zero failures/errors/skips; 138.265-second test step and 152.547-second workload. Frozen validator and tracked-source cleanliness passed. |
+| `3d3e54599066c98f52384c66953b130a01eaaff8` | Clean native Linux / official Python 3.11.16 | 552 tests passed in 21.092 seconds; frozen validator, clean build/install, resources/identity and installed observation replay passed. |
 
 The successful native Linux environment was freshly installed with the already
 verified uv 0.12.12, using the official Python build-standalone 3.11.16 release
@@ -107,6 +111,50 @@ the canonical Git object; missing proof cannot fall back to the PR head.
 Historical three-key execution plans retain their original semantics. The
 new protocol's unit controls and real API probe do not establish hosted
 producer qualification; the two failed runs remain retained separately.
+
+The third reference [PR 3](https://github.com/taipei49314/delivery-review-reference/pull/3)
+pins `078c032` on another distinct base/head pair. Run `42181483713` passed
+platform identity, trusted dependency/image setup and exact source verification,
+then refused at the isolated-tests stage before producing a receipt or signature.
+Its original failure is retained; a host/runtime preflight investigation does
+not count as successful hosted producer qualification.
+
+The clean installed `078c032` candidate then inspected PR 3 using the real
+platform, exact Git objects and pinned engines. It saved 11 platform observation
+responses plus the separate merge-reference proof, verified its sealed envelope,
+and returned `incomplete/current/block`, exit 2. The failed selected job remained
+a block and missing test evidence remained incomplete. The full inspect took
+13.883 seconds on native Linux. This is an actual negative diagnostic, not E01.
+
+The Docker setup failure was independently reproduced with the pinned CLI and
+Buildx: a successful trusted image build populated its configuration directory,
+and the unchanged execution preflight refused that nonempty directory. Commit
+`3d3e545` preserves build state and creates a separate new empty execution config.
+Both platforms passed 53 focused producer controls and independent review.
+
+The fourth reference [PR 4](https://github.com/taipei49314/delivery-review-reference/pull/4),
+run `42183133333`, completed successfully with producer `3d3e545`. It created
+artifact `13486795225` (1,926 bytes), whose original ZIP SHA-256 is
+`abe09663a76a9419b91e4bb2f334ec0b84bc34fda5c53c27fdbe04e517db0672`,
+and signed the measured subject. The clean installed verifier independently
+acquired source, original archive/JUnit and custom attestation, then ran official
+cryptographic verification. Its report was `incomplete/current/clear`, exit 2:
+the only unmet required obligation was `producer_not_qualified`. The registry
+was not overridden. The native full inspect took 17.634 seconds.
+
+That actual signed-evidence capture was replayed twice with the installed
+`3d3e545` reader inside a real disconnected network namespace. Both fresh
+official cryptographic verifications exited 0; the original tree/timestamps
+stayed unchanged. Both reports were `incomplete/unknown/clear`, retaining the
+original qualification gap, with byte-identical JSON, Markdown and HTML. The
+JSON SHA-256 was `7622e25c5f30ff32a53791464da1919187ebc34d3d3ff97afbe2bc9ddfc62474`.
+Raw captures and separate fresh crypto audits remain under
+`work/public-reference-inspection-linux-3d3e545-01/` and
+`work/signed-reference-offline-replay-3d3e545-01/`.
+
+Successful signing alone does not complete producer qualification. Zero-test,
+all-skipped, native-failure, merge-source, boundary and replacement controls
+remain separately recorded requirements before a registry entry or E01 claim.
 
 Actual legacy compatibility was checked using the saved public PR 1 inspection.
 The installed `8bb4337` reader and the new working-tree reader ran inside a real

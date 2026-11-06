@@ -202,6 +202,97 @@ class TestEvidenceBindingTests(unittest.TestCase):
             mutate(self.fixture.metadata)
             self.assertNotEqual("satisfied", self.fixture.bound().obligation["outcome"])
 
+    def test_v2_digest_contradiction_blocks_without_reinterpreting_v1(self):
+        self.fixture.metadata["digest"] = "sha256:" + "f" * 64
+        for version, effect in ((1, "clear"), (2, "block")):
+            with self.subTest(profile_version=version):
+                self.fixture.profile["profile_version"] = version
+                self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+                result = self.fixture.bound()
+                self.assertEqual(("error", effect), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertIn("artifact_transport_digest_mismatch", result.obligation["reason_codes"])
+                self.assertEqual(version == 2, "artifact_digest_mismatch" in result.obligation["reason_codes"])
+                self.assertIn(self.fixture.args()["artifact_metadata"].body_bytes, result.raw_files.values())
+                self.assertIn(self.fixture.artifact.archive_bytes, result.raw_files.values())
+
+    def test_v2_generic_absence_or_unconfirmed_app_does_not_become_a_block(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        row = self.fixture.capture_fixture.find("check_run")
+        original = self.fixture.capture_fixture.payload(row)
+        for app in (None, {}, {"id": True}, {"id": "99999"}):
+            with self.subTest(app=app):
+                document = dict(original, app=app)
+                self.fixture.capture_fixture.set_payload(row, document)
+                result = self.fixture.bound(artifact=None)
+                self.assertEqual(("untrusted", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertNotIn("check_app_mismatch", result.obligation["reason_codes"])
+        self.fixture.capture_fixture.set_payload(row, original)
+        for changes in ({"artifact": None}, {"qualification": None}, {"artifact_metadata": None},
+                        {"artifact": None, "archive_bytes": b"authored malformed archive", "artifact_metadata": None}):
+            with self.subTest(changes=tuple(changes)):
+                result = self.fixture.bound(**changes)
+                self.assertNotEqual("satisfied", result.obligation["outcome"])
+                self.assertEqual("clear", result.obligation["effect"])
+
+    def test_v2_damaged_zip_keeps_scoped_platform_digest_contradiction_before_parsing(self):
+        original = self.fixture.artifact.archive_bytes
+        metadata = self.fixture.args()["artifact_metadata"]
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for damaged in (b"X" + original[1:], original[:-1]):
+                with self.subTest(profile_version=version, same_size=len(damaged) == len(original)):
+                    result = self.fixture.bound(artifact=None, archive_bytes=damaged)
+                    self.assertEqual(("error", "block" if version == 2 else "clear"),
+                        (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertEqual(version == 2, "artifact_digest_mismatch" in result.obligation["reason_codes"])
+                    self.assertEqual("reported", result.evidence["binding_level"])
+                    self.assertIsNone(result.diagnostics["attestation_expected"])
+                    self.assertIn(damaged, result.raw_files.values())
+                    self.assertIn(metadata.body_bytes, result.raw_files.values())
+                    if version == 2:
+                        self.assertEqual((7001, digest(damaged)),
+                            (result.evidence["artifact_id"], result.evidence["artifact_sha256"]))
+
+    def test_v2_digest_negative_proof_requires_original_complete_scoped_metadata(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        original = self.fixture.artifact.archive_bytes
+        damaged = b"X" + original[1:]
+        metadata = self.fixture.args()["artifact_metadata"]
+        cases = [None, replace(metadata, request_path=metadata.request_path + "0"),
+                 replace(metadata, status_code=404), replace(metadata, complete=False),
+                 replace(metadata, complete=1), replace(metadata, headers={"authorization": "authored unsafe header"}),
+                 replace(metadata, body_bytes=b"{}"), replace(metadata, body_bytes=b'{"id":7001,"id":7001}')]
+        mutations = (lambda row: row.update(id=True), lambda row: row.update(id="7001"),
+            lambda row: row.update(digest="not-an-algorithm-digest"), lambda row: row.update(size_in_bytes=True),
+            lambda row: row.update(size_in_bytes=-1), lambda row: row.update(size_in_bytes=1.5),
+            lambda row: row.update(name="delivery-review-1001-2-4001"), lambda row: row.update(expired=True),
+            lambda row: row["workflow_run"].update(id=999), lambda row: row["workflow_run"].update(id=True),
+            lambda row: row["workflow_run"].update(head_sha="f" * 40),
+            lambda row: row["workflow_run"].update(repository_id=9002),
+            lambda row: row["workflow_run"].update(head_repository_id=9002))
+        for mutate in mutations:
+            document = deepcopy(self.fixture.metadata)
+            mutate(document)
+            cases.append(replace(metadata, body_bytes=json.dumps(document).encode()))
+        for index, candidate in enumerate(cases):
+            with self.subTest(candidate=index):
+                result = self.fixture.bound(artifact=None, archive_bytes=damaged, artifact_metadata=candidate)
+                self.assertEqual(("error", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertNotIn("artifact_digest_mismatch", result.obligation["reason_codes"])
+                self.assertIn(damaged, result.raw_files.values())
+        # The later metadata check must also validate scope before it can use
+        # a contradictory digest for an otherwise parseable archive.
+        document = deepcopy(self.fixture.metadata)
+        document["workflow_run"]["id"] = 999
+        document["digest"] = "sha256:" + "f" * 64
+        result = self.fixture.bound(artifact_metadata=fact(metadata.request_path, document))
+        self.assertEqual(("error", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+        self.assertIn("artifact_run_mismatch", result.obligation["reason_codes"])
+        self.assertNotIn("artifact_digest_mismatch", result.obligation["reason_codes"])
+
     def test_api_route_and_completeness_are_checked(self):
         fact_value = self.fixture.args()["artifact_metadata"]
         for change in ({"request_path": "/unrelated"}, {"status_code": 404}, {"complete": False}):
@@ -235,6 +326,58 @@ class TestEvidenceBindingTests(unittest.TestCase):
         self.fixture.junit = self.fixture.xml(passed=1, skipped=1)
         self.fixture.rebuild()
         self.assertEqual("satisfied", self.fixture.bound().obligation["outcome"])
+
+    def test_v2_authenticated_zero_and_all_skipped_counts_block_while_v1_remains_clear(self):
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for skipped, native, reason in ((0, 0, "zero_tests"), (0, 5, "zero_tests"), (3, 0, "all_tests_skipped")):
+                with self.subTest(profile_version=version, skipped=skipped, native=native):
+                    self.fixture.junit = self.fixture.xml(passed=0, skipped=skipped)
+                    self.fixture.receipt["execution"]["test_exit"] = native
+                    self.fixture.rebuild()
+                    result = self.fixture.bound()
+                    self.assertEqual(("missing", "block" if version == 2 else "clear"),
+                        (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertIn(reason, result.obligation["reason_codes"])
+                    self.assertEqual("workflow_bound", result.evidence["binding_level"])
+                    self.assertIn(self.fixture.junit, result.raw_files.values())
+
+    def test_v2_untrusted_zero_or_all_skipped_claims_do_not_gain_count_based_block(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        for skipped, native in ((0, 5), (3, 0)):
+            self.fixture.junit = self.fixture.xml(passed=0, skipped=skipped)
+            self.fixture.receipt["execution"]["test_exit"] = native
+            self.fixture.rebuild()
+            for result in (bind_test_evidence(**self.fixture.args()), self.fixture.bound(qualification=None)):
+                with self.subTest(skipped=skipped, reasons=result.obligation["reason_codes"]):
+                    self.assertEqual(("untrusted", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertNotIn("zero_tests", result.obligation["reason_codes"])
+                    self.assertNotIn("all_tests_skipped", result.obligation["reason_codes"])
+
+    def test_collection_error_alias_requires_qualified_native_exit_and_specific_junit_phase(self):
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for native, passed, errors, message, collection in (
+                    (2, 0, 1, "collection failure", True),
+                    (1, 0, 1, "collection failure", False),
+                    (2, 0, 1, "failed on setup", False),
+                    (2, 1, 1, "collection failure", False),
+                    (3, 0, 1, "collection failure", False),
+                    (2, 1, 0, "collection failure", False)):
+                with self.subTest(profile_version=version, native=native, passed=passed, errors=errors, message=message):
+                    self.fixture.junit = self.fixture.xml(passed=passed, errors=errors).replace(
+                        b'<error message="authored">', ('<error message="' + message + '">').encode())
+                    self.fixture.receipt["execution"]["test_exit"] = native
+                    self.fixture.rebuild()
+                    result = self.fixture.bound()
+                    self.assertEqual(version == 2 and collection,
+                        "pytest_collection_error" in result.obligation["reason_codes"])
+                    self.assertEqual("block", result.obligation["effect"])
+                    self.assertEqual("failed" if errors else "error", result.obligation["outcome"])
+                    self.assertIsNone(self.fixture.receipt["execution"]["collection_exit"])
 
     def test_missing_or_retargeted_reusable_workflow_is_untrusted(self):
         row = self.fixture.capture_fixture.find("attempt")

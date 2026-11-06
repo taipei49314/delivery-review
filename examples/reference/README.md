@@ -1,10 +1,14 @@
 # Authored public reference flow and qualification procedure
 
-Status: reference source and procedure prepared locally. No reference repository,
-hosted producer qualification or E01–E18 PASS is established by these files.
-The source is first-party authored Apache-2.0 code. It may be published in a
-dedicated public repository after review. Do not use another project's PR as a
-destructive test target.
+Status: the first-party Apache-2.0 fixture is published in the dedicated public
+[delivery-review-reference repository](https://github.com/taipei49314/delivery-review-reference).
+The first two hosted attempts are preserved as actual failures before artifact
+upload or signing: [run 42177088855](https://github.com/taipei49314/delivery-review-reference/actions/runs/42177088855)
+and [run 42178476087](https://github.com/taipei49314/delivery-review-reference/actions/runs/42178476087).
+Their original base/PR pairs remain unchanged; later attempts use new pairs and
+separate evidence records. Hosted producer qualification and E01–E18 remain
+pending. Neither the fixture files nor these failed runs establish a PASS.
+Do not use another project's PR as a destructive test target.
 
 The initial producer supports same-repository GitHub.com `pull_request`, Linux
 amd64 GitHub-hosted Ubuntu 24.04, Python 3.11.16, pytest 8.4.2, and literal

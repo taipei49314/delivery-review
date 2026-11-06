@@ -69,7 +69,8 @@ class InspectionRunnerTests(unittest.TestCase):
         self.events = []
 
     def live(self, name="live", *, qualified=True, malformed_zip=False, source_error=False,
-             crypto_fail=False, crypto_unavailable=False, reference_error=False, event_error=False):
+             crypto_fail=False, crypto_unavailable=False, reference_error=False, event_error=False,
+             archive_digest_mismatch=False):
         scripted = ScriptedTransport(self.capture)
         fixture, events, owner = self.fixture, self.events, self
         class Platform:
@@ -87,6 +88,8 @@ class InspectionRunnerTests(unittest.TestCase):
                 return scripted.get(path, **kwargs)
         archive = b"not-a-zip" if malformed_zip else fixture.artifact.archive_bytes
         metadata = {**fixture.metadata, "size_in_bytes": len(archive), "digest": "sha256:" + digest(archive)}
+        if archive_digest_mismatch:
+            metadata["digest"] = "sha256:" + "0" * 64
         artifacts = ArtifactTransport([response({"total_count": 1, "artifacts": [metadata]}), response(metadata), response(archive)])
         proofs = AttestationTransport([discovery((self.proof.raw_files["bundle"],))])
         def source(*args, **kwargs):
@@ -201,6 +204,27 @@ class InspectionRunnerTests(unittest.TestCase):
                 runner._execution_basis(dict(current, **change))
         with self.assertRaises(ContractError):
             runner._execution_basis(dict(legacy, event_source_basis="github_merge_reference_v1"))
+
+    def test_v2_live_and_replay_retain_original_archive_contradiction_without_crypto_upgrade(self):
+        from delivery_review.inspection_profile import seal_inspection_profile
+        legacy = self.live("legacy-digest", archive_digest_mismatch=True)
+        self.assertEqual("incomplete", legacy["state"]["evidence"])
+        self.assertEqual("clear", legacy["state"]["policy"])
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        report = self.live(archive_digest_mismatch=True)
+        expected = loads_strict((Path(__file__).resolve().parents[1] / "fixtures/cases/E10-artifact-digest-mismatch.json").read_bytes())["expected"]
+        self.assertEqual(expected["state"], report["state"])
+        self.assertEqual(expected["exit_code"], report["exit_code"])
+        self.assertIn("artifact_digest_mismatch", report["obligations"][0]["reason_codes"])
+        saved = verify_inspection(self.root / "live")
+        self.assertEqual(self.fixture.artifact.archive_bytes,
+            saved.files["raw/tests/" + runner._test_key("pytest-linux") + "/artifact.zip"])
+        replay = self.replay("replay-digest")
+        self.assertEqual({"evidence": "error", "freshness": "unknown", "policy": "block"}, replay["state"])
+        self.assertIn("artifact_digest_mismatch", replay["obligations"][0]["reason_codes"])
+        self.assertNotIn("crypto", self.events)
+        self.assertNotIn("replay_crypto", self.events)
 
     def test_legacy_plan_ignores_new_reference_files_and_transport_errors_remain_unavailable(self):
         raw = {"trusted-root.jsonl": self.fixture.trusted_root,

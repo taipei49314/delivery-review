@@ -15,7 +15,7 @@ Observed development results, exact sources and retained failures:
 | Engine wheel SHA-256, METADATA and RECORD verification | Completed for three candidates; see ENGINE-LOCK.md. |
 | Local M0 validation on Windows / Python 3.12 | PASS: 51 tests, 40 synthetic cases and 20 frozen files; see M0-VALIDATION.md. |
 | EC pool Windows / Python 3.12 CI | `m0-contracts` is the configured route; execution results are the per-commit `ec / m0-contracts` check and EC receipt. |
-| Linux CI | No qualified Linux pool lane. Clean native local Linux / official Python 3.11.16 passed all 535 tests, build and installed-package checks at `7355952`; this is separate from hosted product acceptance. |
+| Linux CI | No qualified Linux pool lane. Clean native local Linux / official Python 3.11.16 passed all 552 tests, build and installed-package checks at `3d3e545`; this is separate from hosted product acceptance. |
 | Installed engine CLI/JSON adapters | Bounded static execution and native adapters implemented; real pinned CLI probes on Windows/Python 3.12 and Linux/Python 3.11. Full product qualification remains separate. See SPEC-003. |
 | Local evidence bundle and offline replay | Implemented for saved normalized observations; see EVIDENCE-BUNDLES.md. No provider mapping or producer authentication. |
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
@@ -26,9 +26,10 @@ Observed development results, exact sources and retained failures:
 | Observation inspect/verify/replay/refresh, final recheck and JSON/Markdown/HTML output | Implemented; raw replay dispatches the saved mapper version. Mapper 2 resolves narrowly qualified listing omissions under ADR-002; mapper 1 output remains byte-identical. No delivery readiness or producer claim. |
 | Installable CLI and source provenance | Development sdist/wheel build and an installed observation replay outside the source checkout completed. Bundled offline resources, clean-source identity and inventory controls implemented; exact-release qualification pending. |
 | Complete inspection policy identity | ADR-003 and strict profile validator bind acquisition/producer selectors to the frozen policy identity; the composer preserves that approved identity in the full report. |
+| Profile v2 acceptance semantics | Explicit matrix/runtime proof, original policy-proposal comparison, declared ledger inputs and frozen negative dispositions implemented with raw controls. Profile v1 replay remains historical. See SPEC-010. |
 | Safe static source materialization | Bounded public/authenticated acquisition, exact object validation and offline restoration implemented; real public/private fetch feasibility passed both platforms. Full product source qualification pending. See SPEC-005. |
 | Artifact transport | Bounded metadata/ZIP/attestation acquisition, exact raw capture and versioned replay implemented. Signed locators are explicitly omitted; original archives and compressed bundles remain. See SPEC-007. |
-| Qualified producer workflow and pytest/JUnit parser | Parser, isolated producer candidate, official offline verifier and independent evidence binder implemented. Local Docker boundary controls passed; hosted producer registry remains empty pending qualification. See SPEC-004, SPEC-006 and SPEC-008. |
+| Qualified producer workflow and pytest/JUnit parser | Actual hosted head/merge signing and installed cryptographic verification passed at producer `3d3e545`; zero/all-skipped/failure runs retained. Registry remains empty pending boundary/replacement qualification. See SPEC-004, SPEC-006 and SPEC-008. |
 | Product JSON/Markdown/HTML reports | Full composer, inspection CLI and original-evidence envelope implemented with authored controls on both platforms. Saved normalized and observation-only formats remain distinct. See SPEC-009. |
 | E01–E18 product integration | NOT_RUN. |
 

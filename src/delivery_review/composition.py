@@ -10,6 +10,8 @@ from types import MappingProxyType
 from .adapters.engines import PINS, normalize_engine_result
 from .contracts import canonical_bytes, canonical_digest, derive_state, exit_for, require, validate_report
 from .engine_runner import EngineExecution
+from .ledger_input import apply_declaration
+from .policy_change import observe_policy_change
 from .providers.github_observations import map_capture
 from .providers.github_routes import sha
 from .test_evidence import (TestEvidenceInputs, bind_test_evidence, capture_payload,
@@ -68,6 +70,9 @@ def _engine(execution, name, profile, snapshot, observed_at):
     files = {"engines/" + name + "/execution.json": execution.manifest_bytes,
              "engines/" + name + "/native-policy.json": policy_bytes}
     files.update({"engines/" + name + "/" + key + ".bin": value for key, value in raw.items()})
+    if name == "ledgerwash" and profile["profile_version"] == 2 and "ledger_input" in profile:
+        observed, declaration = apply_declaration(observed, profile["ledger_input"], snapshot)
+        files["ledger/input.json"] = declaration
     return observed, files
 
 
@@ -86,7 +91,8 @@ def _static_obligation(requirement, observed, repository_id, head):
         outcome = "error"
     elif observed["status"] == "not_provided":
         outcome = "missing" if requirement["required"] else "not_applicable"
-        reasons.append("ledger_not_provided")
+        reasons.append(("required_ledger_not_provided" if requirement["required"] else "optional_ledger_not_provided")
+            if "ledger_input" in observed else "ledger_not_provided")
         if not requirement["required"]:
             # A strict Ledgerwash invocation may block solely for absence. The
             # optional requirement cannot acquire a block from that absence;
@@ -106,9 +112,10 @@ def _static_obligation(requirement, observed, repository_id, head):
     return evidence, obligation_record(requirement, evidence, outcome, reasons, effect)
 
 
-def _ci(requirement, capture, observations):
+def _ci(requirement, capture, observations, profile=None):
     evidence = evidence_record(requirement, observations["subject"]["repository_id"])
-    workflow, job, outcome, reasons = selected_job(observations, requirement, capture)
+    decision_v2 = profile is not None and profile["profile_version"] == 2
+    workflow, job, outcome, reasons = selected_job(observations, requirement, capture, profile)
     if workflow is not None:
         evidence.update(workflow_id=workflow["workflow_id"], run_id=workflow["selection"].get("run_id"),
                         attempt=workflow["selection"].get("attempt"))
@@ -119,7 +126,7 @@ def _ci(requirement, capture, observations):
         records = [row for row in capture.manifest["records"] if row["id"] in check.get("raw_refs", [])]
         if len(records) == 1 and records[0]["body"] is not None:
             evidence["raw_sha256"] = records[0]["body"]["sha256"]
-    effect = "clear"
+    effect = "block" if decision_v2 and "check_app_mismatch" in reasons else "clear"
     if outcome is None:
         evidence["binding_level"] = "platform_bound"
         if job["native_state"] != "observed":
@@ -131,6 +138,8 @@ def _ci(requirement, capture, observations):
             outcome = "satisfied"
         elif job["conclusion"] == "failure":
             outcome, reasons, effect = "failed", ["required_job_failed"], "block"
+        elif decision_v2 and job["conclusion"] == "timed_out":
+            outcome, reasons, effect = "missing", ["required_job_timeout"], "block"
         else:
             outcome, reasons = "missing", ["required_job_" + (job["conclusion"] or "unconfirmed")]
     evidence["messages"] = reasons
@@ -208,6 +217,15 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                         subject.update(merge_commit_sha=event_sha, merge_parents=parents)
                 except (ValueError, TypeError, KeyError):
                     pass  # The binder already retained the specific error.
+        elif requirement["kind"] == "policy_change":
+            proposal = observe_policy_change(profile, snapshot)
+            raw.update(proposal.raw_files)
+            observed = proposal.observation
+            item = evidence_record(requirement, policy["repository_id"])
+            item.update(subject_sha=snapshot.head_sha, status="error" if observed["outcome"] == "error" else
+                "missing" if observed["outcome"] == "missing" else "observed",
+                raw_sha256=_sha(proposal.raw_files["policy-change/observation.json"]), messages=observed["reason_codes"])
+            obligation = obligation_record(requirement, item, observed["outcome"], observed["reason_codes"], observed["effect"])
         elif requirement["kind"] in {"scanner", "ledger"}:
             name = requirement["selector"]["engine"]
             if name not in engine_observations:
@@ -225,7 +243,12 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                     engine = dict(engine_observations[name]["engine"], evidence_id=item["id"])
                     engines.append(engine)
         elif requirement["kind"] == "ci_job":
-            item, obligation = _ci(requirement, capture, observations)
+            item, obligation = _ci(requirement, capture, observations, profile)
+            if "matrix" in requirement["selector"] and obligation["outcome"] in {"satisfied", "failed"}:
+                # A native job status proves execution, not the runtime tuple.
+                # Preserve its block while waiting for authenticated test proof.
+                obligation.update(outcome="untrusted", reason_codes=["matrix_runtime_unconfirmed"])
+                item["messages"] = ["matrix_runtime_unconfirmed"]
             if item["subject_sha"] == snapshot.head_sha and "pr_head" not in policy["allowed_source_modes"]:
                 obligation.update(outcome="unsupported", reason_codes=["ci_source_mode_disallowed"])
         else:
@@ -248,8 +271,14 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
         item = next(row for row in evidence if row["id"] in obligation["evidence_ids"])
         proofs = sorted(bound_tests, key=lambda row: row["id"])
         if requirement["kind"] == "ci_job":
-            proofs = [row for row in proofs if all(row[key] == item[key]
-                for key in ("workflow_id", "run_id", "attempt", "job_id", "app_id", "job_name"))]
+            if "matrix" in requirement["selector"]:
+                selector = requirement["selector"]
+                proofs = [row for row in proofs if all(row[key] == item[key]
+                    for key in ("workflow_id", "run_id", "attempt", "job_id", "app_id"))
+                    and row["job_name"] == selector["job_name"] and row["matrix"] == selector["matrix"]]
+            else:
+                proofs = [row for row in proofs if all(row[key] == item[key]
+                    for key in ("workflow_id", "run_id", "attempt", "job_id", "app_id", "job_name"))]
         proofs = [row for row in proofs if (
             row["subject_sha"] == snapshot.head_sha and "pr_head" in policy["allowed_source_modes"] or
             row["subject_sha"] == subject["merge_commit_sha"] and "github_merge" in policy["allowed_source_modes"]
@@ -262,7 +291,10 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                         messages=["Source established by " + proof["id"]])
             obligation.update(outcome="satisfied", reason_codes=[])
         else:
-            _, derived = _ci(requirement, capture, observations)
+            _, derived = _ci(requirement, capture, observations, profile)
+            if "matrix" in requirement["selector"]:
+                item.update(job_name=proof["job_name"], matrix=dict(proof["matrix"]))
+                item["messages"] = [code for code in item["messages"] if code != "matrix_runtime_unconfirmed"]
             item.update(subject_sha=proof["subject_sha"], messages=item["messages"] + ["Test checkout established by " + proof["id"]])
             obligation.update(derived)
     selected = [{"workflow_id": row["workflow_id"], "run_id": row["selection"]["run_id"], "attempt": row["selection"]["attempt"]}

@@ -153,7 +153,7 @@ def _execution_basis(plan):
 
 def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, writer=None, replay=False,
                  event_source_basis="legacy_pr_field_v1"):
-    from .evidence.artifacts import parse_artifact_capture, map_artifact_capture
+    from .evidence.artifacts import parse_artifact_capture, map_artifact_capture, rejected_archive_for_binding
     profile = load_inspection_profile(profile_bytes)
     inputs, audit = {}, {}
     require(event_source_basis in {"legacy_pr_field_v1", "github_merge_reference_v1"}, "unsupported_event_source_basis")
@@ -174,6 +174,8 @@ def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, write
                 {name[len(prefix) + 1:]: data for name, data in raw.items() if name.startswith(prefix + "/raw/")})
             observed = map_artifact_capture(artifact_capture)
             artifact, bundles, complete = observed["archive_bytes"], observed["bundles"], observed["attestations_complete"]
+            if profile["profile_version"] == 2 and artifact is None:
+                artifact = rejected_archive_for_binding(artifact_capture)
             meta = observed["metadata"]
             if meta is not None:
                 metadata = RawApiFact(meta["request_path"], meta["status_code"], meta["body_bytes"],
@@ -348,7 +350,7 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
                     "error": response["error"]}) + b"\n")
                 if response["body"] is not None:
                     _keep(writer, raw, prefix + "/body.bin", response["body"])
-                workflow, job, outcome, _ = selected_job(observations, requirement, initial)
+                workflow, job, outcome, _ = selected_job(observations, requirement, initial, profile=profile)
                 if outcome is not None:
                     continue
                 prefix = "artifacts/" + key
