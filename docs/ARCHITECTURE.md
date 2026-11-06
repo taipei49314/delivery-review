@@ -1,9 +1,9 @@
 # Architecture
 
-Status: **M0 contract architecture**. Schemas, synthetic contract fixtures and a
-local validator are the current milestone. The provider, installed-engine
-adapters, producer, parser and report workflow described below are subsequent
-implementation boundaries, not claims that those components already work.
+Status: **M1 storage/replay slice in progress on the frozen M0 contract**.
+Schemas, synthetic contract fixtures, the local validator and local evidence
+bundle/replay APIs are implemented. The provider, installed-engine adapters,
+producer, parser and live report workflow below remain planned boundaries.
 
 The authoritative semantics are in [CONTRACT.md](CONTRACT.md). Product
 integration evidence is tracked separately in [ACCEPTANCE.md](ACCEPTANCE.md).
@@ -48,6 +48,13 @@ interfaces. The new product owns evidence linkage and policy evaluation.
 | pytest adapter | Qualified JUnit dialect, counts, outcomes and producer linkage. | That upload success means tests passed or that zero tests suffice. |
 | Policy evaluator | Obligation matching, evidence/freshness/policy axes, reasons and readiness. | Requirements from observed green jobs or arbitrary natural-language task intent. |
 | Renderer | Traceable summaries, complete findings, limitations and escaped presentation. | A new decision or a stronger claim than the JSON report. |
+
+The implemented `evidence/store.py` preserves supplied policy/report/raw bytes,
+checks the exact inventory and referenced raw digests, and rejects unsafe or
+unbounded bundles. `evidence/replay.py` recomputes state from saved normalized
+observations under the saved policy. Neither component derives those observations
+from GitHub responses or increases their binding level. See
+[EVIDENCE-BUNDLES.md](EVIDENCE-BUNDLES.md) for this slice's precise format and API.
 
 The evaluator should be deterministic over verified normalized observations and
 the saved policy. Provider and scanner code performs IO; the evaluator does not
@@ -117,13 +124,25 @@ There is no service database in v0.1. Each inspection creates a new directory
 with raw evidence, digests and reports. This gives reproducible local inputs;
 it does not protect against an owner rewriting both files and the manifest.
 
-The planned commands are `inspect`, `replay` and `refresh`. M0 does not claim
-these product commands are implemented. Inspect captures a snapshot and finishes
-with a live consistency check. Replay reads saved bytes/policy, preserves the
-original `observed_at` and emits freshness `unknown`. Refresh obtains new
-observations in a new directory and preserves the old report. A future history
-index can reference these records without changing
-their original observation times or source identities.
+The local `tools/evidence.py` command implements `verify` and `replay` for saved
+bundles. Replay writes a distinct bundle, retains the original `observed_at`,
+clears the new report's live recheck and emits freshness `unknown`. Original
+raw bytes and the historical report, including its live recheck, remain in the
+source bundle. The new manifest records the source manifest/report digests.
+This is deterministic replay of saved normalized observations, not a new
+provider observation or a renewal of trust.
+
+The store requires a new destination and writes the completion manifest last.
+Invalid or absent manifests make interrupted directories unusable. Paths,
+file counts, sizes and digests are checked; links and reparse points are refused.
+The caller must exclusively own the tree during IO. Create-once behavior does
+not protect against an owner rewriting both files and manifest, nor provide a
+sandbox against concurrent hostile filesystem mutation.
+
+The planned `inspect` and `refresh` flows are not implemented. Inspect will
+capture a snapshot and finish with a live consistency check; refresh will obtain
+new observations in a new directory. A future history index can reference these
+records without changing their original observation times or source identities.
 
 The product does not reconstruct a complete Agent session, operate a scheduler,
 manage tasks, write GitHub content, auto-accept changes or train a model. Existing
