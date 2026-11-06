@@ -215,8 +215,10 @@ def _manifest(raw: bytes, limits: CaptureLimits) -> dict:
         raise CaptureError("invalid capture manifest JSON") from exc
     _need(type(manifest) is dict and set(manifest) == _MANIFEST_FIELDS, "invalid capture manifest fields")
     _need(manifest["kind"] == "delivery-review-github-observation-capture", "unsupported capture kind")
-    for field in ("capture_version", "mapper_version"):
-        _need(type(manifest[field]) is int and manifest[field] == 1, "unsupported capture or mapper version")
+    _need(type(manifest["capture_version"]) is int and manifest["capture_version"] == 1,
+          "unsupported capture version")
+    _need(type(manifest["mapper_version"]) is int and manifest["mapper_version"] in (1, 2),
+          "unsupported mapper version")
     _timestamp(manifest["observed_at"])
     _collector(manifest["collector"])
     _termination(manifest["termination"])
@@ -317,9 +319,10 @@ that writer is unusable and the directory is not reused. No raw body is parsed.
 
     @_boundary
     def __init__(self, destination: str | Path, profile_bytes: bytes, *, collector: dict,
-                 observed_at: str, limits: CaptureLimits = DEFAULT_LIMITS):
+                 observed_at: str, limits: CaptureLimits = DEFAULT_LIMITS, mapper_version: int = 2):
         self._closed = False
         self._failed = False
+        _need(type(mapper_version) is int and mapper_version in (1, 2), "unsupported mapper version")
         self._limits = _limits(limits)
         self._profile = _profile(profile_bytes, limits)
         _collector(collector)
@@ -327,7 +330,7 @@ that writer is unusable and the directory is not reused. No raw body is parsed.
         self._profile_bytes = profile_bytes
         self._bodies = {}
         self._manifest = {"kind": "delivery-review-github-observation-capture", "capture_version": 1,
-                          "mapper_version": 1, "observed_at": observed_at,
+                          "mapper_version": mapper_version, "observed_at": observed_at,
                           "collector": loads_strict(canonical_bytes(collector)),
                           "profile": {"path": "profile.json", "size_bytes": len(profile_bytes),
                                       "sha256": _sha(profile_bytes)},

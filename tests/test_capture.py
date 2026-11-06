@@ -202,6 +202,33 @@ class CaptureStorageTests(unittest.TestCase):
         with self.assertRaises(CaptureError):
             parse_capture(saved.manifest_bytes, changed_profile, saved.bodies)
 
+    def test_mapper_versions_are_explicit_preserved_and_never_silently_upgraded(self):
+        default = self.capture()
+        self.assertEqual(2, default.manifest["mapper_version"])
+        for version in (1, 2):
+            with self.subTest(version=version):
+                destination = self.root / f"mapper-{version}"
+                writer = self.writer(destination, mapper_version=version)
+                writer.record(metadata(self.profile), b'{"synthetic":true}')
+                saved = writer.seal()
+                verified = verify_capture(destination)
+                parsed = parse_capture(saved.manifest_bytes, saved.profile_bytes, saved.bodies)
+                self.assertEqual(1, verified.manifest["capture_version"])
+                self.assertEqual(version, verified.manifest["mapper_version"])
+                self.assertEqual(version, parsed.manifest["mapper_version"])
+                self.assertEqual(saved.manifest_bytes, verified.manifest_bytes)
+                self.assertEqual(saved.manifest_bytes, parsed.manifest_bytes)
+        for index, version in enumerate((None, True, False, 0, 3, 1.0, 2.0, "1", "2")):
+            with self.subTest(invalid=version):
+                manifest = default.manifest
+                manifest["mapper_version"] = version
+                with self.assertRaises(CaptureError):
+                    parse_capture(json.dumps(manifest).encode(), default.profile_bytes, default.bodies)
+                destination = self.root / f"invalid-mapper-{index}"
+                with self.assertRaises(CaptureError):
+                    self.writer(destination, mapper_version=version)
+                self.assertFalse(destination.exists())
+
     def test_untrusted_json_is_bounded_and_strict(self):
         saved = self.capture()
         bad_json = [b'\xef\xbb\xbf{}', b'{"x":1,"x":2}', b'{"x":NaN}', b'{"x":1.0}',

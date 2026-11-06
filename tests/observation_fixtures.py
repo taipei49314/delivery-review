@@ -57,8 +57,9 @@ class CaptureFixture:
     set_payload(record, dict_or_bytes) updates actual bytes and their digests.
     data() returns (manifest, profile_bytes, bodies), reindexing removed records.
     """
-    def __init__(self, *, empty=False, attempt=1, listing_attempt=None, per_page=100):
+    def __init__(self, *, empty=False, attempt=1, listing_attempt=None, per_page=100, mapper_version=1):
         self.profile, self.records, self.bodies = profile_document(), [], {}
+        self.mapper_version = mapper_version
         self.profile["limits"]["per_page"] = per_page
         self.termination = {"status": "completed", "reason_codes": []}
         if empty:
@@ -129,7 +130,7 @@ class CaptureFixture:
                 path = "raw/" + record["id"] + ".body"
                 record["body"].update(path=path, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
                 bodies[path] = raw
-        manifest = {"kind": "delivery-review-github-observation-capture", "capture_version": 1, "mapper_version": 1,
+        manifest = {"kind": "delivery-review-github-observation-capture", "capture_version": 1, "mapper_version": self.mapper_version,
                     "observed_at": NOW, "collector": {"version": "synthetic-test-fixture", "source_sha": "1" * 40},
                     "profile": {"path": "profile.json", "size_bytes": len(profile_bytes), "sha256": hashlib.sha256(profile_bytes).hexdigest()},
                     "termination": deepcopy(self.termination), "records": records}

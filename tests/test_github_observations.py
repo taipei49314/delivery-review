@@ -2,13 +2,14 @@
 from copy import deepcopy
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from delivery_review.contracts import canonical_bytes
+from delivery_review.contracts import ContractError, canonical_bytes, canonical_digest
 from delivery_review.providers.github_observations import map_capture
 from delivery_review.providers.github_routes import request_path
 from observation_fixtures import (BASE, HEAD, NOW, CaptureFixture, check_document,
@@ -21,6 +22,19 @@ def mutate(fixture, role, change, phase="initial", **identity):
     change(payload)
     fixture.set_payload(record, payload)
     return record
+
+
+def omitted_listings(*, absent=False, **options):
+    fixture = CaptureFixture(**options)
+    for phase in ("initial", "final"):
+        def omit(payload):
+            row = payload["workflow_runs"][0]
+            if absent:
+                row.pop("pull_requests")
+            else:
+                row["pull_requests"] = []
+        mutate(fixture, "workflow_runs", omit, phase)
+    return fixture
 
 
 class GitHubObservationTests(unittest.TestCase):
@@ -317,6 +331,221 @@ class GitHubObservationTests(unittest.TestCase):
         self.assertEqual(NOW, map_capture(capture)["observed_at"])
         with self.assertRaises(ValueError):
             map_capture(capture, mode="guess")
+
+
+class ListingPrecedenceTests(unittest.TestCase):
+    def test_v1_canonical_bytes_are_unchanged_across_version_dispatch(self):
+        # Recorded from pre-ADR-002 mapper source 8747e16, before implementing v2.
+        # Fixtures are authored responses, not recorded GitHub observations.
+        happy = CaptureFixture()
+        partial = omitted_listings()
+        stale = omitted_listings()
+        mutate(stale, "pull_request", lambda row: row["head"].update(sha="d" * 40), "final")
+        cases = ((happy, "a0423df48216c7f91785dce2d53c695f25f682650e32f21d7a2de171f808f11c"),
+                 (partial, "c2a1afa6ae263a97181b88d658666c93442a99b3b66f5823b65b54fb90165a72"),
+                 (stale, "498928cbd85914aabb647dea890f1835b72e4de45cf340f9a999e34dcefd338a"))
+        for fixture, digest in cases:
+            with self.subTest(digest=digest):
+                result = map_capture(fixture.seal())
+                self.assertEqual(digest, canonical_digest(result))
+                self.assertEqual(1, result["mapper_version"])
+                self.assertNotIn("listing_association", result["workflows"][0]["selection"])
+
+    def test_only_v2_resolves_absent_or_empty_listing_associations_with_raw_provenance(self):
+        for absent in (False, True):
+            with self.subTest(absent=absent):
+                fixture = omitted_listings(absent=absent, mapper_version=2)
+                result = map_capture(fixture.seal())
+                workflow = result["workflows"][0]
+                self.assertEqual("complete", result["collection_status"])
+                self.assertEqual("matched", workflow["association"])
+                self.assertEqual("matched", workflow["expected_jobs"][0]["status"])
+                self.assertEqual("current", result["captured_freshness"])
+                self.assertEqual("unknown", result["freshness"])
+                self.assertEqual("not_established", result["tested_source"])
+                self.assertEqual(2, result["mapper_version"])
+                self.assertTrue({"pr_association_unconfirmed", "listing_pr_association_resolved"} <= set(result["reasons"]))
+                for phase, selection, detail in (("initial", workflow["selection"], workflow["run"]),
+                                                 ("final", workflow["recheck"]["selection"], workflow["recheck"]["run"])):
+                    original = selection["listing_association"]
+                    self.assertEqual("unconfirmed", original["status"])
+                    self.assertEqual(["pr_association_unconfirmed"], original["reasons"])
+                    self.assertEqual([fixture.find("workflow_runs", phase)["id"]], original["raw_refs"])
+                    self.assertEqual("resolved", original["resolution"])
+                    self.assertEqual(sorted(detail["raw_refs"] + workflow["attempt"]["raw_refs"]), original["resolved_by"])
+                    self.assertIn("pr_association_unconfirmed", selection["reasons"])
+                    if phase == "final":
+                        self.assertTrue(set(original["resolved_by"]) <= set(workflow["recheck"]["raw_refs"]))
+                fixture.mapper_version = 1
+                self.assertEqual("partial", map_capture(fixture.seal())["collection_status"])
+
+    def test_null_malformed_ambiguous_and_conflicting_listings_cannot_be_resolved_or_fallback(self):
+        correct = run_document()["pull_requests"][0]
+        wrong_head = deepcopy(correct)
+        wrong_head["head"]["sha"] = "d" * 40
+        cases = (None, {}, "missing", [{}], [{"number": "7"}], [correct, correct], [{"number": 8}], [wrong_head])
+        for association in cases:
+            with self.subTest(association=association):
+                fixture = omitted_listings(mapper_version=2)
+                newer = run_document()
+                newer["pull_requests"] = association
+                mutate(fixture, "workflow_runs", lambda row: row.update(total_count=2,
+                    workflow_runs=[run_document(run_id=900, number=7), newer]))
+                result = map_capture(fixture.seal())
+                workflow = result["workflows"][0]
+                self.assertEqual(1001, workflow["selection"]["run_id"])
+                self.assertNotEqual("resolved", workflow["selection"]["listing_association"]["resolution"])
+                self.assertEqual([], workflow["selection"]["listing_association"]["resolved_by"])
+                self.assertNotEqual("matched", workflow["association"])
+                if association not in ([{"number": 8}], [wrong_head]):
+                    self.assertEqual("partial", result["collection_status"])
+
+    def test_other_listing_identity_gaps_or_mismatches_cannot_be_overridden(self):
+        for change in (lambda row: row.pop("path"), lambda row: row.update(path=".github/workflows/other.yml"),
+                       lambda row: row.pop("head_repository"), lambda row: row["head_repository"].update(id=9999)):
+            fixture = omitted_listings(mapper_version=2)
+            mutate(fixture, "workflow_runs", lambda payload: change(payload["workflow_runs"][0]))
+            result = map_capture(fixture.seal())
+            self.assertEqual("partial", result["collection_status"])
+            self.assertNotEqual("resolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+
+    def test_independent_run_and_attempt_must_match_every_identity_and_suite(self):
+        changes = (lambda row: row.update(id=9999), lambda row: row.update(run_number=9),
+                   lambda row: row["repository"].update(id=9999), lambda row: row.update(workflow_id=202),
+                   lambda row: row.update(event="push"), lambda row: row.update(head_sha="d" * 40),
+                   lambda row: row.update(path=".github/workflows/other.yml"),
+                   lambda row: row["head_repository"].update(id=9999),
+                   lambda row: row.update(pull_requests=[]), lambda row: row.update(pull_requests=[{}]),
+                   lambda row: row["pull_requests"][0].update(number=8),
+                   lambda row: row["pull_requests"][0]["head"]["repo"].update(id=9999),
+                   lambda row: row["pull_requests"][0]["base"]["repo"].update(id=9999),
+                   lambda row: row["pull_requests"][0]["head"].update(sha="d" * 40),
+                   lambda row: row.pop("check_suite_id"), lambda row: row.update(check_suite_id=9999))
+        for role in ("run", "attempt"):
+            for index, change in enumerate(changes):
+                with self.subTest(role=role, identity=index):
+                    fixture = omitted_listings(mapper_version=2)
+                    mutate(fixture, role, change)
+                    result = map_capture(fixture.seal())
+                    self.assertNotEqual("complete", result["collection_status"])
+                    self.assertEqual("unresolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+        fixture = omitted_listings(mapper_version=2)
+        mutate(fixture, "workflow", lambda row: row.update(path=".github/workflows/other.yml"))
+        self.assertEqual("unresolved", map_capture(fixture.seal())["workflows"][0]["selection"]["listing_association"]["resolution"])
+
+    def test_missing_unavailable_and_out_of_order_detail_cannot_resolve_listing(self):
+        for role in ("run", "attempt"):
+            for failure in ("missing", "unavailable", "order"):
+                with self.subTest(role=role, failure=failure):
+                    fixture = omitted_listings(mapper_version=2)
+                    record = fixture.find(role)
+                    if failure == "missing":
+                        fixture.records.remove(record)
+                    elif failure == "unavailable":
+                        fixture.unavailable(record)
+                    else:
+                        fixture.records.remove(record)
+                        fixture.records.insert(0, record)
+                    result = map_capture(fixture.seal())
+                    self.assertNotEqual("complete", result["collection_status"])
+                    self.assertEqual("unresolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+
+    def test_current_attempt_advancement_uses_only_exact_new_attempt_evidence(self):
+        fixture = omitted_listings(mapper_version=2, attempt=2, listing_attempt=1)
+        result = map_capture(fixture.seal())
+        self.assertEqual("complete", result["collection_status"])
+        self.assertEqual(2, result["workflows"][0]["selection"]["attempt"])
+        self.assertIn("attempt_advanced", result["reasons"])
+        fixture.records.remove(fixture.find("attempt"))
+        fixture.add("attempt", run_document(attempt=1), attempt=1)
+        result = map_capture(fixture.seal())
+        self.assertEqual("partial", result["collection_status"])
+        self.assertEqual("unresolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+        self.assertIsNone(result["workflows"][0]["attempt"])
+
+    def test_final_new_run_or_attempt_cannot_reuse_old_detail_and_stale_wins(self):
+        for change in ("attempt", "run"):
+            with self.subTest(change=change):
+                fixture = omitted_listings(mapper_version=2)
+                if change == "attempt":
+                    mutate(fixture, "run", lambda row: row.update(run_attempt=2), "final")
+                else:
+                    newer = run_document(run_id=1002, number=9)
+                    fixture.records.remove(fixture.find("run", "final"))
+                    fixture.add("run", newer, phase="final", run_id=1002)
+                    newer = deepcopy(newer)
+                    newer["pull_requests"] = []
+                    mutate(fixture, "workflow_runs", lambda row: row.update(workflow_runs=[newer]), "final")
+                result = map_capture(fixture.seal(), mode="live")
+                self.assertEqual("partial", result["collection_status"])
+                self.assertEqual("stale", result["freshness"])
+                workflow = result["workflows"][0]
+                self.assertEqual("resolved", workflow["selection"]["listing_association"]["resolution"])
+                self.assertEqual("unresolved", workflow["recheck"]["selection"]["listing_association"]["resolution"])
+
+    def test_final_detail_order_blocks_resolution_and_does_not_claim_current(self):
+        for reverse_all in (False, True):
+            fixture = omitted_listings(mapper_version=2)
+            if reverse_all:
+                fixture.records.sort(key=lambda record: record["phase"] != "final")
+            else:
+                final = fixture.find("run", "final")
+                fixture.records.remove(final)
+                fixture.records.insert(fixture.records.index(fixture.find("workflow_runs", "final")), final)
+            result = map_capture(fixture.seal())
+            self.assertEqual("error", result["collection_status"])
+            self.assertEqual("unknown", result["captured_freshness"])
+            self.assertEqual("unresolved", result["workflows"][0]["recheck"]["selection"]["listing_association"]["resolution"])
+
+    def test_resolved_association_never_resolves_unknown_native_state_or_erases_failure(self):
+        for role in ("workflow_runs", "run", "attempt", "jobs", "check_run"):
+            for invalid in ({"status": "future_state", "conclusion": None}, {"status": "completed", "conclusion": None}):
+                with self.subTest(role=role, invalid=invalid):
+                    fixture = omitted_listings(mapper_version=2)
+                    def change(payload):
+                        row = payload["workflow_runs"][0] if role == "workflow_runs" else payload["jobs"][0] if role == "jobs" else payload
+                        row.update(invalid)
+                    mutate(fixture, role, change)
+                    result = map_capture(fixture.seal())
+                    self.assertEqual("partial", result["collection_status"])
+                    self.assertEqual("resolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+        fixture = omitted_listings(mapper_version=2)
+        for role in ("run", "attempt", "check_run"):
+            mutate(fixture, role, lambda row: row.update(conclusion="failure"))
+        mutate(fixture, "jobs", lambda row: row["jobs"][0].update(conclusion="failure"))
+        result = map_capture(fixture.seal())
+        self.assertEqual("complete", result["collection_status"])
+        self.assertEqual("failure", result["workflows"][0]["jobs"][0]["conclusion"])
+
+    def test_unrelated_pagination_check_and_parse_failures_survive_resolution(self):
+        for problem in ("app", "missing_check", "json", "pagination"):
+            with self.subTest(problem=problem):
+                fixture = omitted_listings(mapper_version=2)
+                if problem == "app":
+                    mutate(fixture, "check_run", lambda row: row["app"].update(id=9999))
+                elif problem == "missing_check":
+                    fixture.records.remove(fixture.find("check_run"))
+                elif problem == "json":
+                    fixture.set_payload(fixture.find("check_run"), b'{"id":4001,"id":4002}')
+                else:
+                    mutate(fixture, "jobs", lambda row: row.update(total_count=2))
+                result = map_capture(fixture.seal())
+                self.assertEqual("resolved", result["workflows"][0]["selection"]["listing_association"]["resolution"])
+                expected = "complete" if problem == "app" else "error" if problem == "json" else "partial"
+                self.assertEqual(expected, result["collection_status"])
+                if problem == "app":
+                    self.assertEqual("mismatch", result["workflows"][0]["association"])
+
+    def test_v2_is_deterministic_without_io_and_unknown_versions_are_rejected(self):
+        capture = omitted_listings(mapper_version=2).seal()
+        before = capture.manifest_bytes, capture.profile_bytes, dict(capture.bodies)
+        with patch("builtins.open", side_effect=AssertionError("IO")), patch("pathlib.Path.open", side_effect=AssertionError("IO")), \
+             patch("socket.socket", side_effect=AssertionError("network")), patch("subprocess.run", side_effect=AssertionError("subprocess")):
+            self.assertEqual(canonical_bytes(map_capture(capture)), canonical_bytes(map_capture(capture)))
+        self.assertEqual(before, (capture.manifest_bytes, capture.profile_bytes, dict(capture.bodies)))
+        for version in (None, True, "2", 0, 3):
+            with self.subTest(version=version), self.assertRaises(ContractError):
+                map_capture(SimpleNamespace(manifest={"mapper_version": version}))
 
 
 if __name__ == "__main__":

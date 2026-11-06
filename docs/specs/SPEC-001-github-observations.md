@@ -50,6 +50,13 @@ There are three new document kinds, each with its own integer version:
 | `delivery-review-github-observation-capture` | `capture_version: 1` | Original profile and HTTP bodies, request metadata and acquisition termination. |
 | `delivery-review-github-observations` | `observations_version: 1` | Deterministically derived platform observations. |
 
+The separate `mapper_version` is 1 or 2. New captures default to 2; replay
+dispatches only on the saved version, never upgrades a historical capture.
+[ADR-002](../amendments/ADR-002-listing-association-precedence.md) specifies the
+narrow version-2 resolution of an absent/empty listing PR association using
+independent matching current-run and exact-attempt details. The version-1 rules
+below and historical outputs remain unchanged.
+
 These are not contract-v1 policy/report documents or evidence bundle-v1
 documents. Observation output MUST NOT contain `ready_for_review`, a contract-v1
 `state` object, `minimum_binding`, `workflow_bound` or a product `exit_code`.
@@ -162,7 +169,7 @@ The capture manifest has exactly these top-level fields:
 ```text
 kind: "delivery-review-github-observation-capture"
 capture_version: 1
-mapper_version: 1
+mapper_version: 1 | 2
 observed_at: UTC timestamp for collection start
 collector: {version: nonempty string, source_sha: full 40-character commit SHA}
 profile: {path: "profile.json", size_bytes: integer, sha256: lowercase SHA-256}
@@ -347,7 +354,7 @@ the original attempt. Native status changes within an unchanged attempt remain
 recorded observations; freshness here concerns source/selected-execution identity,
 not a guarantee that a running job has stopped changing.
 
-Output has kind/version as defined above, `mapper_version: 1`, scope, mode
+Output has kind/version as defined above, the saved `mapper_version`, scope, mode
 (`live` or `offline_replay`), original `observed_at`, profile and capture digests,
 `tested_source: not_established`, nullable subject, per-workflow selections,
 association results, native job/check observations, ordered reason codes and

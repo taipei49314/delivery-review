@@ -187,6 +187,11 @@ class _Mapper:
         association = {"confirmed": "matched", "unconfirmed": "unconfirmed", "mismatch": "mismatch"}[kernel["association"]]
         return selection, candidates, association
 
+    def resolve_listing(self, selection, association, trace, *, workflow_association,
+                        run, run_valid, attempt, attempt_valid, phase):
+        # Mapper 1 deliberately retains the original listing's association.
+        return association
+
     def run_detail(self, workflow, pr, selection, trace, phase="initial", *, attempt=None):
         trace = _Trace(trace)
         role = "run" if attempt is None else "attempt"
@@ -324,23 +329,28 @@ class _Mapper:
                 _compare(metadata.get("path"), workflow["path"], "workflow_path", trace, lambda value: isinstance(value, str) and bool(value)))
         selection, candidates, listed_association = self.selection(workflow, pr, trace, "initial")
         run, attempt, run_association, attempt_association = None, None, "unconfirmed", "unconfirmed"
+        critical, attempt_valid = False, False
         jobs = []
         if selection["run_id"] is not None:
             run, run_association, critical = self.run_detail(workflow, pr, selection, trace)
             if critical:
                 selection["attempt"] = run["run_attempt"]
-                attempt, attempt_association, _ = self.run_detail(workflow, pr, selection, trace, attempt=selection["attempt"])
+                attempt, attempt_association, attempt_valid = self.run_detail(workflow, pr, selection, trace, attempt=selection["attempt"])
                 if attempt is not None:
                     suite_relation = _compare(attempt["check_suite_id"], run["check_suite_id"], "attempt_check_suite", trace)
                     attempt_association = _combine(attempt_association, suite_relation)
                     attempt["association"] = attempt_association
                     if suite_relation != "matched":
                         attempt["reasons"] = sorted(set(attempt["reasons"]) | {"attempt_check_suite_" + suite_relation})
-                parent = _combine(workflow_association, listed_association, run_association, attempt_association)
-                jobs = [self.job(job, record, workflow, pr, selection, run["check_suite_id"], parent, trace)
-                        for job, record in self.job_rows(workflow, selection, trace)]
             else:
                 trace.add("selected_attempt_unconfirmed")
+        listed_association = self.resolve_listing(selection, listed_association, trace,
+            workflow_association=workflow_association, run=run, run_valid=critical,
+            attempt=attempt, attempt_valid=attempt_valid, phase="initial")
+        if critical:
+            parent = _combine(workflow_association, listed_association, run_association, attempt_association)
+            jobs = [self.job(job, record, workflow, pr, selection, run["check_suite_id"], parent, trace)
+                    for job, record in self.job_rows(workflow, selection, trace)]
         association = _combine(workflow_association, listed_association, run_association, attempt_association,
                                *(job["association"] for job in jobs))
         expected_jobs = []
@@ -356,12 +366,15 @@ class _Mapper:
                 status = matches[0]["association"]
             expected_jobs.append({"name": name, "job_ids": sorted(job["id"] for job in matches if positive(job["id"])), "status": status})
         final_trace = _Trace(trace)
-        final_selection, _, _ = self.selection(workflow, pr, final_trace, "final")
+        final_selection, _, final_association = self.selection(workflow, pr, final_trace, "final")
         final_run, final_valid = None, False
         if final_selection["run_id"] is not None:
             final_run, _, final_valid = self.run_detail(workflow, pr, final_selection, final_trace, "final")
             if final_valid:
                 final_selection["attempt"] = final_run["run_attempt"]
+        self.resolve_listing(final_selection, final_association, final_trace,
+            workflow_association=workflow_association, run=final_run, run_valid=final_valid,
+            attempt=attempt, attempt_valid=attempt_valid, phase="final")
         before = self.selection_identity(selection)
         after = self.selection_identity(final_selection)
         changed = before is not None and after is not None and before != after
@@ -388,6 +401,70 @@ class _Mapper:
         return None
 
 
+class _ListingTrace:
+    """Defer only the listing PR gap; unrelated diagnostics keep their severity."""
+    def __init__(self, trace):
+        self.trace = trace
+
+    def add(self, reason, severity=1):
+        self.trace.add(reason, 0 if reason == "pr_association_unconfirmed" and severity == 1 else severity)
+
+    def use(self, record):
+        self.trace.use(record)
+
+
+class _MapperV2(_Mapper):
+    """ADR-002: matching detail evidence can resolve an absent listing relation."""
+    def __init__(self, capture):
+        super().__init__(capture)
+        self.resolvable_listings = set()
+
+    def selection(self, workflow, pr, trace, phase):
+        selection, candidates, association = super().selection(workflow, pr, _ListingTrace(trace), phase)
+        reasons, refs, raw = selection["reasons"], [], None
+        if selection["run_id"] is not None:
+            candidate = next(row for row in candidates if row["id"] == selection["run_id"])
+            refs = candidate["raw_refs"]
+            record = next(record for record in self.records if record["id"] == refs[0])
+            payload = loads_strict(self.bodies[record["body"]["path"]])
+            raw = next(row for row in payload["workflow_runs"] if row["id"] == selection["run_id"])
+            _, reasons = _association(raw, pr, workflow)
+        omitted = raw is not None and ("pull_requests" not in raw or raw["pull_requests"] == [])
+        eligible = omitted and set(reasons) == {"pr_association_unconfirmed"}
+        selection["listing_association"] = {
+            "status": association, "reasons": sorted(reasons), "raw_refs": refs,
+            "resolution": "unresolved" if association == "unconfirmed" else "not_applicable", "resolved_by": []}
+        if eligible:
+            self.resolvable_listings.add(id(selection))
+        elif "pr_association_unconfirmed" in selection["reasons"]:
+            trace.add("pr_association_unconfirmed")
+        return selection, candidates, association
+
+    def resolve_listing(self, selection, association, trace, *, workflow_association,
+                        run, run_valid, attempt, attempt_valid, phase):
+        if id(selection) not in self.resolvable_listings:
+            return association
+        self.resolvable_listings.remove(id(selection))
+        matched = (workflow_association == "matched" and run_valid and attempt_valid
+                   and run is not None and attempt is not None
+                   and run["association"] == attempt["association"] == "matched"
+                   and run["id"] == attempt["id"] == selection["run_id"]
+                   and run["run_number"] == attempt["run_number"] == selection["run_number"]
+                   and run["run_attempt"] == attempt["run_attempt"] == selection["attempt"]
+                   and positive(run["check_suite_id"]) and run["check_suite_id"] == attempt["check_suite_id"]
+                   and (phase == "initial" or self.recheck_order_valid))
+        if not matched:
+            trace.add("pr_association_unconfirmed")
+            return association
+        resolved_by = sorted(set(run["raw_refs"] + attempt["raw_refs"]))
+        selection["listing_association"].update(resolution="resolved", resolved_by=resolved_by)
+        for record in self.records:
+            if record["id"] in resolved_by:
+                trace.use(record)
+        trace.add("listing_pr_association_resolved", 0)
+        return "matched"
+
+
 def map_capture(capture, *, mode="offline_replay") -> dict:
     """Derive observations only from a VerifiedCapture and its original profile.
 
@@ -396,9 +473,12 @@ def map_capture(capture, *, mode="offline_replay") -> dict:
     """
     if mode not in {"live", "offline_replay"}:
         raise ValueError("unsupported observation mode")
-    mapper = _Mapper(capture)
+    version = capture.manifest["mapper_version"]
+    if type(version) is not int or version not in {1, 2}:
+        raise ContractError("unsupported observation mapper version")
+    mapper = (_Mapper if version == 1 else _MapperV2)(capture)
     trace, profile = mapper.trace, mapper.profile
-    result = {"kind": "delivery-review-github-observations", "observations_version": 1, "mapper_version": 1,
+    result = {"kind": "delivery-review-github-observations", "observations_version": 1, "mapper_version": version,
               "scope": "github_platform_observations", "mode": mode, "observed_at": mapper.manifest["observed_at"],
               "profile_sha256": hashlib.sha256(capture.profile_bytes).hexdigest(),
               "capture_sha256": hashlib.sha256(capture.manifest_bytes).hexdigest(),
