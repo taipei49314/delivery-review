@@ -6,6 +6,7 @@ from delivery_review.contracts import loads_strict, validate_receipt
 from delivery_review.contracts import canonical_bytes
 from delivery_review.adapters.pytest_junit import JUnitError, parse_pytest_junit
 from .host import ProducerError, ProducerExecution
+from .source_identity import measured_source
 
 
 def build_receipt(execution: ProducerExecution, *, source_claim: dict, producer_identity: dict,
@@ -20,8 +21,8 @@ def build_receipt(execution: ProducerExecution, *, source_claim: dict, producer_
             'repository_id', 'head_repository_id', 'pr_number', 'source'}:
         raise ProducerError('invalid_receipt_input')
     inventory = loads_strict(execution.source_inventory_bytes)
-    expected = {'mode': 'pr_head', 'base_tip_sha': inventory['base_tip_sha'], 'head_sha': inventory['head_sha'],
-                'checked_out_sha': inventory['head_sha'], 'merge_parents': []}
+    expected = measured_source(inventory=inventory, source_mode=execution.source_mode,
+        pr_head_sha=execution.pr_head_sha, checked_out_commit_bytes=execution.checked_out_commit_bytes)
     if source_claim['source'] != expected:
         raise ProducerError('receipt_source_mismatch')
     if (execution.stopped is not True or execution.cleaned is not True or execution.error_codes

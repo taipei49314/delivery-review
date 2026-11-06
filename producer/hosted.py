@@ -14,7 +14,6 @@ import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
-import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'src')]
@@ -25,11 +24,12 @@ from delivery_review.evidence.store import _read
 from delivery_review.providers.github_artifact_http import GitHubArtifactTransport
 from delivery_review.providers.github_http import GitHubTransport
 from delivery_review.providers.github_source import acquire_source
-from delivery_review.source_snapshot import _commit, verify_snapshot
-from producer.bootstrap import NoRedirect, request_claims, require, number
+from delivery_review.source_snapshot import verify_snapshot
+from producer.bootstrap import NoRedirect, request_claims, require, number, producer_path
 from producer.host import DockerRuntime, execute_pytest, _run
 from producer.platform_identity import artifact_name, collect_identity
 from producer.receipt import build_receipt
+from producer.source_identity import read_commit, commit_parents
 
 DOCKER_ARCHIVE = 'https://download.docker.com/linux/static/stable/x86_64/docker-29.9.3.tgz'
 DOCKER_ARCHIVE_SHA256 = '3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973'
@@ -111,26 +111,41 @@ def prepare_dependencies(root):
 
 
 def verify_event_source(snapshot, identity):
-    verify_snapshot(snapshot)
     sha = identity['event_source_sha']
-    path = snapshot.root / '.git/objects' / sha[:2] / sha[2:]
-    compressed = _read(path, 8 * 1024 * 1024)
-    inflater = zlib.decompressobj()
-    raw = inflater.decompress(compressed, 8 * 1024 * 1024 + 1)
-    require(inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
-            and len(raw) <= 8 * 1024 * 1024 and hashlib.sha1(raw, usedforsecurity=False).hexdigest() == sha,
-            'event_source_object_invalid')
-    header, _, body = raw.partition(b'\0')
-    require(header == b'commit ' + str(len(body)).encode(), 'event_source_object_invalid')
-    _, parents = _commit(body)
+    raw = read_commit(snapshot, sha)
+    parents = commit_parents(raw, sha)
     require(parents == [identity['base_tip_sha'], identity['head_sha']], 'event_source_parent_mismatch')
     return raw
 
 
-def prepare():
+def tested_source_claim(identity):
+    mode = identity['source_mode']
+    require(identity['producer_path'] == producer_path(mode), 'producer_source_mode_mismatch')
+    return {'mode': mode, 'base_tip_sha': identity['base_tip_sha'], 'head_sha': identity['head_sha'],
+        'checked_out_sha': identity['head_sha'] if mode == 'pr_head' else identity['event_source_sha'],
+        'merge_parents': [] if mode == 'pr_head' else [identity['base_tip_sha'], identity['head_sha']]}
+
+
+def select_test_snapshot(head_snapshot, event_snapshot, identity):
+    """The two entry points choose fixed modes; caller inputs cannot select code."""
+    expected = tested_source_claim(identity)
+    verify_snapshot(head_snapshot)
+    verify_event_source(event_snapshot, identity)
+    require(head_snapshot.repository == event_snapshot.repository == identity['repository_full_name']
+            and head_snapshot.head_sha == identity['head_sha']
+            and event_snapshot.head_sha == identity['event_source_sha']
+            and head_snapshot.base_tip_sha == event_snapshot.base_tip_sha == identity['base_tip_sha'],
+            'measured_snapshot_identity_mismatch')
+    selected = head_snapshot if identity['source_mode'] == 'pr_head' else event_snapshot
+    require(selected.head_sha == expected['checked_out_sha'], 'selected_checkout_mismatch')
+    return selected
+
+
+def prepare(source_mode='pr_head'):
+    producer_path(source_mode)
     require(sys.version_info[:2] == (3, 11) and platform.machine() == 'x86_64' and sys.platform == 'linux',
             'unsupported_hosted_platform')
-    claims = request_claims(os.environ)
+    claims = request_claims(os.environ, source_mode=source_mode)
     require((ROOT / '.git').is_dir() and not (ROOT / '.git').is_symlink()
             and _read(ROOT / '.git/HEAD', 1024).strip() == claims['job_workflow_sha'].encode(),
             'producer_checkout_mismatch')
@@ -140,7 +155,7 @@ def prepare():
     # Only generated host paths/IDs are exported. No project strings enter a shell.
     _output({'producer_root': str(root)})
     transport = GitHubTransport(token=os.environ.get('GH_TOKEN'))
-    identity = collect_identity(claims, transport=transport, destination=root / 'platform')
+    identity = collect_identity(claims, transport=transport, destination=root / 'platform', source_mode=source_mode)
     _save(root / 'identity.json', canonical_bytes(identity))
     runtime, image, wheels = prepare_dependencies(root)
     source = acquire_source(root / 'source', repository={'id': identity['repository_id'],
@@ -150,7 +165,11 @@ def prepare():
         'full_name': identity['repository_full_name']}, head_sha=identity['event_source_sha'],
         base_tip_sha=identity['base_tip_sha'], git_executable='/usr/bin/git', token=os.environ.get('GH_TOKEN'))
     _save(root / 'event-source.commit', verify_event_source(event_source.snapshot, identity))
-    execution = execute_pytest(source.snapshot, runtime=runtime, image_digest=image, wheelhouse=wheels, test_path='tests')
+    snapshot = select_test_snapshot(source.snapshot, event_source.snapshot, identity)
+    execution = execute_pytest(snapshot, runtime=runtime, image_digest=image, wheelhouse=wheels, test_path='tests',
+                               source_mode=source_mode, pr_head_sha=identity['head_sha'])
+    _save(root / 'tested-source.commit', execution.checked_out_commit_bytes)
+    _save(root / 'tested-source-inventory.json', execution.source_inventory_bytes)
     for phase in ('setup', 'test'):
         value = getattr(execution, phase)
         if value is not None:
@@ -160,10 +179,10 @@ def prepare():
         'setup_exit': None if execution.setup is None else execution.setup.exit_code,
         'test_exit': None if execution.test is None else execution.test.exit_code,
         'errors': list(execution.error_codes), 'stopped': execution.stopped, 'cleaned': execution.cleaned,
-        'source_inventory_sha256': _sha(execution.source_inventory_bytes)}))
+        'source_inventory_sha256': _sha(execution.source_inventory_bytes), 'source_mode': execution.source_mode,
+        'checked_out_commit_sha256': _sha(execution.checked_out_commit_bytes)}))
     source_claim = {key: identity[key] for key in ('repository_id', 'head_repository_id', 'pr_number')}
-    source_claim['source'] = {'mode': 'pr_head', 'base_tip_sha': identity['base_tip_sha'], 'head_sha': identity['head_sha'],
-                             'checked_out_sha': identity['head_sha'], 'merge_parents': []}
+    source_claim['source'] = tested_source_claim(identity)
     producer = {'repository_id': identity['producer_repository_id'], 'workflow_path': identity['producer_path'],
                 'workflow_sha': identity['producer_sha'], 'run_id': identity['run_id'],
                 'attempt': identity['run_attempt'], 'job_id': identity['job_id']}
@@ -195,8 +214,7 @@ def build_predicate(identity, *, artifact_id, artifact_sha256, receipt_bytes, ju
     receipt = loads_strict(receipt_bytes)
     validate_receipt(receipt)
     require(all(receipt[key] == identity[key] for key in ('repository_id', 'head_repository_id', 'pr_number'))
-        and receipt['source'] == {'mode': 'pr_head', 'base_tip_sha': identity['base_tip_sha'],
-            'head_sha': identity['head_sha'], 'checked_out_sha': identity['head_sha'], 'merge_parents': []}
+        and receipt['source'] == tested_source_claim(identity)
         and receipt['execution']['command'] == ['/work/venv/bin/python', '-I', '-m', 'pytest', '-c', '/trusted/pytest.ini',
             '--rootdir=/work/source', '--junitxml=/work/output/junit.xml', '--strict-markers', 'tests']
         and receipt['producer'] == {'repository_id': identity['producer_repository_id'],
@@ -213,12 +231,12 @@ def build_predicate(identity, *, artifact_id, artifact_sha256, receipt_bytes, ju
 def attest():
     root = _saved_root()
     identity = loads_strict(_read(root / 'identity.json', 65536))
-    claims = request_claims(os.environ)
+    claims = request_claims(os.environ, source_mode=identity['source_mode'])
     require(all(claims[key] == str(identity[other]) for key, other in [('repository_id', 'repository_id'),
         ('run_id', 'run_id'), ('run_attempt', 'run_attempt'), ('check_run_id', 'check_run_id'),
         ('job_workflow_sha', 'producer_sha'), ('sha', 'event_source_sha')]), 'signing_execution_changed')
     current = collect_identity(claims, transport=GitHubTransport(token=os.environ.get('GH_TOKEN')),
-                               destination=root / 'platform-before-signing')
+                               destination=root / 'platform-before-signing', source_mode=identity['source_mode'])
     require(current == identity, 'platform_identity_changed_before_signing')
     artifact_id = number(os.environ.get('DELIVERY_REVIEW_ARTIFACT_ID'))
     digest = os.environ.get('DELIVERY_REVIEW_ARTIFACT_DIGEST')
@@ -262,8 +280,9 @@ def finish():
 
 def main():
     try:
-        require(len(sys.argv) == 2 and sys.argv[1] in {'prepare', 'attest', 'finish'}, 'invalid_producer_command')
-        return {'prepare': prepare, 'attest': attest, 'finish': finish}[sys.argv[1]]()
+        require(len(sys.argv) == 2 and sys.argv[1] in {'prepare', 'prepare-merge', 'attest', 'finish'}, 'invalid_producer_command')
+        return {'prepare': prepare, 'prepare-merge': lambda: prepare('github_merge'),
+                'attest': attest, 'finish': finish}[sys.argv[1]]()
     except Exception:
         # Never emit untrusted source/log/exception text into Actions commands.
         print('delivery-review: producer measurement or provenance step refused')

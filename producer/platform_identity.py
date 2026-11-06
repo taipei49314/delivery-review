@@ -12,7 +12,7 @@ import urllib.parse
 from delivery_review.contracts import canonical_bytes, loads_strict
 from delivery_review.providers.github_routes import API_VERSION, next_page, positive, sha
 from .bootstrap import (PRODUCER_REPOSITORY, PRODUCER_REPOSITORY_ID, PRODUCER_PATH,
-                        BootstrapError, number, require)
+                        BootstrapError, number, require, producer_path)
 
 APP_ID = 15368
 
@@ -21,11 +21,14 @@ def artifact_name(identity):
     return 'delivery-review-' + '-'.join(str(identity[key]) for key in ('run_id', 'run_attempt', 'check_run_id'))
 
 
-def derive_identity(claims, *, repository, producer_repository, pull_request, run, attempt, jobs, check):
+def derive_identity(claims, *, repository, producer_repository, pull_request, run, attempt, jobs, check, source_mode='pr_head'):
     """Pure consistency boundary. Network provenance belongs to collect_identity."""
     repo_id, run_id, attempt_id, check_id = (number(claims[key]) for key in
                                            ('repository_id', 'run_id', 'run_attempt', 'check_run_id'))
     name = claims['repository']
+    path = producer_path(source_mode)
+    require(claims['job_workflow_ref'] == PRODUCER_REPOSITORY + '/' + path + '@' + claims['job_workflow_sha'],
+            'producer_source_mode_mismatch')
     pr_number = int(claims['ref'].split('/')[2])
     require(positive(repository.get('id')) and repository.get('id') == repo_id
             and repository.get('full_name') == name, 'platform_repository_mismatch')
@@ -49,7 +52,7 @@ def derive_identity(claims, *, repository, producer_repository, pull_request, ru
         references = value.get('referenced_workflows')
         require(type(references) is list, 'producer_reference_missing')
         matching = [item for item in references if type(item) is dict and type(item.get('path')) is str
-                    and item['path'].split('@', 1)[0] == PRODUCER_REPOSITORY + '/' + PRODUCER_PATH]
+                    and item['path'].split('@', 1)[0] == PRODUCER_REPOSITORY + '/' + path]
         require(len(matching) == 1 and matching[0].get('path') == claims['job_workflow_ref']
                 and matching[0].get('sha') == claims['job_workflow_sha'], 'producer_reference_unconfirmed')
     require(positive(run.get('workflow_id')) and run.get('workflow_id') == attempt.get('workflow_id')
@@ -84,11 +87,12 @@ def derive_identity(claims, *, repository, producer_repository, pull_request, ru
             'event_source_sha': claims['sha'], 'run_id': run_id, 'run_attempt': attempt_id,
             'check_run_id': check_id, 'job_id': job['id'], 'workflow_id': run['workflow_id'],
             'job_name': job['name'], 'app_id': APP_ID, 'producer_repository_id': PRODUCER_REPOSITORY_ID,
-            'producer_repository_full_name': PRODUCER_REPOSITORY, 'producer_path': PRODUCER_PATH,
-            'producer_sha': claims['job_workflow_sha']}
+            'producer_repository_full_name': PRODUCER_REPOSITORY, 'producer_path': path,
+            'producer_sha': claims['job_workflow_sha'], 'source_mode': source_mode}
 
 
-def collect_identity(claims, *, transport, destination: Path):
+def collect_identity(claims, *, transport, destination: Path, source_mode='pr_head'):
+    producer_path(source_mode)
     destination.mkdir(mode=0o700, parents=False, exist_ok=False)
     records = []
     total = 0
@@ -126,6 +130,6 @@ def collect_identity(claims, *, transport, destination: Path):
         jobs.extend(value['jobs'])
         page = next_page(headers, path, max_pages=10)
     require(len(jobs) == total_count, 'job_pagination_incomplete')
-    identity = derive_identity(claims, jobs=jobs, **values)
+    identity = derive_identity(claims, jobs=jobs, source_mode=source_mode, **values)
     (destination / 'manifest.json').write_bytes(canonical_bytes({'records': records, 'identity': identity}) + b'\n')
     return identity

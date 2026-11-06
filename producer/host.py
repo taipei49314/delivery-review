@@ -24,6 +24,7 @@ import uuid
 from delivery_review.adapters.pytest_junit import JUnitError, parse_pytest_junit
 from delivery_review.contracts import ContractError, canonical_bytes, loads_strict
 from delivery_review.source_snapshot import SourceSnapshot, verify_snapshot
+from .source_identity import measured_source, read_commit
 
 HERE = Path(__file__).resolve().parent
 IDLE = ('/usr/local/bin/python3', '-I', '-c', 'import time; time.sleep(1800)')
@@ -79,6 +80,9 @@ class ProducerExecution:
     error_codes: tuple[str, ...]
     stopped: bool
     cleaned: bool
+    source_mode: str = 'pr_head'
+    pr_head_sha: str | None = None
+    checked_out_commit_bytes: bytes | None = None
 
     @property
     def junit_observation(self):
@@ -275,7 +279,8 @@ def _inspect_config(document, image, volume, limits, *, seccomp_bytes, keeper):
 
 
 def execute_pytest(snapshot: SourceSnapshot, *, runtime: DockerRuntime, image_digest: str,
-                   wheelhouse: Path, test_path: str, limits=ProducerLimits()) -> ProducerExecution:
+                   wheelhouse: Path, test_path: str, limits=ProducerLimits(), source_mode='pr_head',
+                   pr_head_sha=None) -> ProducerExecution:
     """Execute the fixed profile; failures retain observations, never readiness."""
     _need(type(limits) is ProducerLimits, 'invalid_producer_limits')
     for item in fields(limits):
@@ -283,8 +288,10 @@ def execute_pytest(snapshot: SourceSnapshot, *, runtime: DockerRuntime, image_di
         _need(type(value) is int and 0 < value <= getattr(ProducerLimits(), item.name), 'invalid_producer_limits')
     _need(type(image_digest) is str and re.fullmatch(r'sha256:[0-9a-f]{64}', image_digest) is not None,
           'invalid_image_digest')
-    verify_snapshot(snapshot)
+    checked_out_commit_bytes = read_commit(snapshot, snapshot.head_sha)
     inventory = snapshot.inventory
+    measured_source(inventory=inventory, source_mode=source_mode, pr_head_sha=pr_head_sha,
+                    checked_out_commit_bytes=checked_out_commit_bytes)
     _test_path(test_path, inventory)
     base = _runtime(runtime)
     seccomp_bytes = _seccomp_bytes()
@@ -408,4 +415,4 @@ def execute_pytest(snapshot: SourceSnapshot, *, runtime: DockerRuntime, image_di
     except ContractError:
         errors.append('source_changed_during_execution')
     return ProducerExecution(snapshot.inventory_bytes, image_digest, test_path, command, setup, test, junit,
-                             observation, tuple(errors), stopped, cleaned)
+                             observation, tuple(errors), stopped, cleaned, source_mode, pr_head_sha, checked_out_commit_bytes)

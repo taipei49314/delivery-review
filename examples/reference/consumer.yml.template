@@ -1,0 +1,12 @@
+# Render with an independently reviewed full producer SHA before publication.
+name: Delivery Review reference tests
+on:
+  pull_request:
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  attestations: write
+jobs:
+  pytest-linux:
+    uses: taipei49314/delivery-review/.github/workflows/pytest-producer.yml@REPLACE_WITH_APPROVED_PRODUCER_SHA

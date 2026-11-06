@@ -110,7 +110,14 @@ class ProducerHostTests(unittest.TestCase):
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
             proc = Path('/proc') / str(pid) / 'stat'
-            if not proc.exists() or proc.read_text().split()[2] == 'Z':
+            try:
+                state = proc.read_text().split()[2]
+            except FileNotFoundError:
+                # Reaping may remove /proc/PID/stat between lookup and read.
+                # Only actual disappearance is success; a live non-zombie child
+                # still has to terminate before the same bounded deadline.
+                break
+            if state == 'Z':
                 break
             time.sleep(.01)
         else:

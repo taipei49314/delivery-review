@@ -10,7 +10,9 @@ selected, approved producer workflow may execute project tests in the guest.
 ## Scope and inputs
 
 The first execution profile is `pytest-isolated-container-v1`, Python 3.11,
-pytest 8.4.2, `pytest-8.4.2-xunit2`, `pr_head`, with no extra project packages.
+pytest 8.4.2, `pytest-8.4.2-xunit2`, with no extra project packages. Two separate
+fixed workflows select `pr_head` or `github_merge`; each exact workflow path,
+full revision and permitted source mode needs its own qualification.
 Project install hooks, dependency manifests and caller-supplied command lines
 are not used. The published protocol fixes the test selector to literal `tests`; the reusable
 workflow accepts no caller inputs. The generic local qualification driver may
@@ -160,7 +162,7 @@ expected green result.
 
 `producer.receipt.build_receipt(execution, *, source_claim, producer_identity,
 recorded_at, receipt_id)` runs on the host after execution. It checks the source
-claim against the measured `pr_head` snapshot, hashes the original JUnit bytes
+claim against the measured checkout snapshot, hashes the original JUnit bytes
 and preserves setup/test exit observations. `collection_exit` is null because
 no independent collect-only process ran. The builder refuses unconfirmed stop
 or cleanup, any boundary error, unsuccessful setup, absent native test exit,
@@ -244,7 +246,8 @@ attestation has been published by this work.
 
 ## Hosted reusable workflow candidate
 
-`.github/workflows/pytest-producer.yml` is `workflow_call` only and preserves the
+`.github/workflows/pytest-producer.yml` and `pytest-producer-merge.yml` are
+`workflow_call` only and preserve the
 separate EC product CI route. It accepts no caller commands, source refs, test
 selectors, job IDs, artifact identities, images or secrets. It targets an
 Ubuntu 24.04 GitHub-hosted Linux amd64 runner and Python 3.11.16. The supported
@@ -280,8 +283,13 @@ check metadata. It matches the OIDC check ID through the job's explicit
 `check_run_url`; job and check IDs need not be equal. It verifies GitHub Actions
 App ID, suite, exact job URL, full reusable workflow SHA and same-repository
 head/base identity. The event's OIDC SHA is separately obtained as a canonical
-Git object and must have exactly `[base_tip, pr_head]` parents. The guest tests
-`pr_head`; the certificate event merge SHA is never falsely equated to it.
+Git object and must have exactly `[base_tip, pr_head]` parents. The head workflow
+tests `pr_head`; the fixed merge workflow tests that actual merge snapshot.
+Original canonical commit bytes and independently measured source inventory
+bind the receipt's checkout and ordered parents. Neither a supplied parent list
+nor the certificate event SHA alone establishes what the guest tested. The
+existing execution profile and custom predicate remain version 1; the bundled
+registry must separately qualify the exact path/revision and permitted mode.
 
 After the fixed guest stops and cleanup is confirmed, the host writes only
 `receipt.json` and the original `junit.xml` into a fresh upload directory. The

@@ -32,6 +32,7 @@ jobs:
           import os
           from pathlib import Path
           import re
+          import sys
           import time
           import urllib.parse
           import urllib.request
@@ -39,6 +40,7 @@ jobs:
           PRODUCER_REPOSITORY = 'taipei49314/delivery-review'
           PRODUCER_REPOSITORY_ID = 1438021135
           PRODUCER_PATH = '.github/workflows/pytest-producer.yml'
+          PRODUCER_PATHS = {'pr_head': PRODUCER_PATH, 'github_merge': '.github/workflows/pytest-producer-merge.yml'}
           AUDIENCE = 'delivery-review-producer-v1'
 
 
@@ -72,7 +74,13 @@ jobs:
               return int(value)
 
 
-          def validate_claims(claims, environment, *, now):
+          def producer_path(source_mode):
+              require(type(source_mode) is str and source_mode in PRODUCER_PATHS, 'unsupported_producer_source_mode')
+              return PRODUCER_PATHS[source_mode]
+
+
+          def validate_claims(claims, environment, *, now, source_mode='pr_head'):
+              path = producer_path(source_mode)
               require(type(claims) is dict, 'invalid_oidc_claims')
               require(claims.get('iss') == 'https://token.actions.githubusercontent.com'
                       and claims.get('aud') == AUDIENCE, 'oidc_issuer_or_audience_mismatch')
@@ -98,7 +106,7 @@ jobs:
               require(type(sha) is str and re.fullmatch(r'[0-9a-f]{40}', sha)
                       and sha == environment.get('GITHUB_SHA'), 'oidc_source_mismatch')
               require(type(producer_sha) is str and re.fullmatch(r'[0-9a-f]{40}', producer_sha)
-                      and claims.get('job_workflow_ref') == PRODUCER_REPOSITORY + '/' + PRODUCER_PATH + '@' + producer_sha,
+                      and claims.get('job_workflow_ref') == PRODUCER_REPOSITORY + '/' + path + '@' + producer_sha,
                       'producer_must_be_called_at_full_sha')
               ref = claims.get('ref')
               require(type(ref) is str and re.fullmatch(r'refs/pull/[1-9][0-9]{0,15}/merge', ref)
@@ -107,8 +115,9 @@ jobs:
                       'sha', 'ref', 'job_workflow_ref', 'job_workflow_sha', 'event_name', 'runner_environment', 'iat', 'exp')}
 
 
-          def request_claims(environment, *, now=None):
+          def request_claims(environment, *, now=None, source_mode='pr_head'):
               """Only the trusted runner environment supplies the endpoint and credential."""
+              producer_path(source_mode)
               endpoint, token = environment.get('ACTIONS_ID_TOKEN_REQUEST_URL'), environment.get('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
               require(type(endpoint) is str and len(endpoint) <= 8192 and endpoint.isascii()
                       and not any(ord(c) <= 32 or ord(c) == 127 for c in endpoint), 'invalid_oidc_endpoint')
@@ -136,12 +145,14 @@ jobs:
               header = strict_json(base64.urlsafe_b64decode(jwt[0] + '=' * (-len(jwt[0]) % 4)))
               require(header.get('alg') == 'RS256' and type(header.get('kid')) is str, 'unsupported_oidc_token')
               claims = strict_json(base64.urlsafe_b64decode(jwt[1] + '=' * (-len(jwt[1]) % 4)))
-              return validate_claims(claims, environment, now=int(time.time()) if now is None else now)
+              return validate_claims(claims, environment, now=int(time.time()) if now is None else now, source_mode=source_mode)
 
 
           def main():
               try:
-                  claims = request_claims(os.environ)
+                  require(sys.argv[1:] in ([], ['github_merge']), 'invalid_bootstrap_command')
+                  mode = 'github_merge' if sys.argv[1:] else 'pr_head'
+                  claims = request_claims(os.environ, source_mode=mode)
                   # Name reuse must not bootstrap code from a replacement repository.
                   url = 'https://api.github.com/repos/' + PRODUCER_REPOSITORY
                   request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json',

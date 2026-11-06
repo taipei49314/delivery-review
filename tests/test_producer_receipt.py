@@ -88,7 +88,7 @@ class ProducerReceiptTests(unittest.TestCase):
             with self.subTest(execution=execution), self.assertRaises(ProducerError):
                 self.receipt(execution)
 
-    def test_source_claim_must_match_measured_snapshot_and_merge_is_unsupported(self):
+    def test_source_claim_must_match_measured_head_and_cannot_claim_merge(self):
         for key, value in (('checked_out_sha', 'c' * 40), ('base_tip_sha', 'c' * 40), ('mode', 'github_merge')):
             with self.subTest(key=key):
                 original = self.source['source'][key]
