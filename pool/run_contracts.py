@@ -95,7 +95,11 @@ def main():
                              "--require-hashes", "--only-binary=:all:", "--no-cache-dir", "--no-compile",
                              "-r", "requirements-contract.txt"], 300)
         run("contracts", [python, "-I", "-B", "tools/validate_contracts.py"], 60)
-        run("unittest", [python, "-I", "-B", "tools/run_contract_tests.py", "--report", str(out / "unittest.json")], 90)
+        # The complete suite now includes bounded subprocess and package checks.
+        # Keep it inside the existing shared 540-second deadline and EC's
+        # admitted ten-minute outer limit, while allowing more than the old
+        # 51-test baseline's ninety-second per-step allowance.
+        run("unittest", [python, "-I", "-B", "tools/run_contract_tests.py", "--report", str(out / "unittest.json")], 480)
         record["unittest"] = json.loads((out / "unittest.json").read_bytes())
         status = run("source-status", ["git", "status", "--porcelain", "--untracked-files=no"], 20)
         if status.read_bytes().strip() or {name: digest(ROOT / name) for name in inputs} != before:
