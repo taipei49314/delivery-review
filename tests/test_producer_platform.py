@@ -17,6 +17,7 @@ from producer.bootstrap import (AUDIENCE, BootstrapError, PRODUCER_PATH, PRODUCE
     PRODUCER_REPOSITORY_ID, request_claims, validate_claims)
 from producer.platform_identity import artifact_name, collect_identity, derive_identity
 from producer.hosted import build_predicate, verify_event_source, _stage, main
+from producer.host import ProducerError
 from delivery_review.source_snapshot import materialize_snapshot
 import test_source_snapshot as source_fixtures
 import test_producer_receipt as receipt_fixtures
@@ -81,6 +82,18 @@ class ProducerPlatformTests(unittest.TestCase):
                 patch('builtins.print') as output:
             self.assertEqual(2, main())
         output.assert_called_once_with('delivery-review: producer measurement or provenance step refused')
+
+    def test_runtime_diagnostics_use_closed_codes_without_exception_text(self):
+        for code, expected in [('docker_config_not_empty', 'docker_config_not_empty'),
+                ('AUTHORED_SECRET', 'producer_control_refused'),
+                ('docker_config_not_empty\n::error::forged', 'producer_control_refused'),
+                ([], 'producer_control_refused'), (None, 'producer_control_refused')]:
+            with self.subTest(code=code), patch('producer.hosted.sys.argv', ['hosted.py', 'prepare']), \
+                    patch('producer.hosted.prepare', side_effect=ProducerError(code)), \
+                    patch('builtins.print') as output:
+                self.assertEqual(2, main())
+            output.assert_called_once_with('delivery-review: producer measurement or provenance step refused code=' + expected,
+                                           flush=True)
 
     def test_oidc_current_hosted_identity_and_full_sha_pin(self):
         claims, environment, _ = fixture()

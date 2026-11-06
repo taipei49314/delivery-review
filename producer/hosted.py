@@ -26,7 +26,7 @@ from delivery_review.providers.github_http import GitHubTransport
 from delivery_review.providers.github_source import acquire_source
 from delivery_review.source_snapshot import verify_snapshot
 from producer.bootstrap import NoRedirect, request_claims, require, number, producer_path
-from producer.host import DockerRuntime, execute_pytest, _run
+from producer.host import DockerRuntime, ProducerError, execute_pytest, _run
 from producer.platform_identity import artifact_name, collect_identity
 from producer.receipt import build_receipt
 from producer.source_identity import read_commit, commit_parents
@@ -39,6 +39,11 @@ PREDICATE_TYPE = 'https://github.com/taipei49314/delivery-review/attestation/pyt
 STAGES = frozenset({'identity-token', 'trusted-checkout', 'platform-identity', 'trusted-dependencies',
     'source-acquisition', 'source-verification', 'isolated-tests', 'receipt',
     'signing-identity', 'uploaded-artifact', 'predicate'})
+PRODUCER_FAILURE_CODES = frozenset({'invalid_producer_limits', 'invalid_image_digest',
+    'unsupported_producer_runtime', 'invalid_docker_runtime', 'unsafe_producer_file',
+    'docker_binary_mismatch', 'docker_config_not_empty', 'seccomp_profile_mismatch',
+    'wheelhouse_inventory_mismatch', 'invalid_test_path', 'test_path_absent',
+    'unsafe_mount_path', 'seccomp_changed_during_execution'})
 
 
 def _stage(name):
@@ -91,8 +96,8 @@ def prepare_dependencies(root):
     docker = root / 'docker'
     _save(docker, binary)
     docker.chmod(0o700)
-    config = root / 'docker-config'
-    config.mkdir(mode=0o700)
+    build_config = root / 'docker-build-config'
+    build_config.mkdir(mode=0o700)
     wheelhouse = root / 'wheelhouse'
     wheelhouse.mkdir(mode=0o755)
     for wheel in loads_strict((ROOT / 'producer/wheels.json').read_bytes())['wheels']:
@@ -104,8 +109,8 @@ def prepare_dependencies(root):
         require(len(raw) == wheel['size_bytes'] and _sha(raw) == wheel['sha256'], 'producer_wheel_mismatch')
         _save(wheelhouse / wheel['filename'], raw)
         (wheelhouse / wheel['filename']).chmod(0o444)
-    runtime = DockerRuntime(docker, DOCKER_SHA256, 'unix:///var/run/docker.sock', config)
-    base = [str(docker), '--config', str(config), '--host', runtime.host]
+    host = 'unix:///var/run/docker.sock'
+    base = [str(docker), '--config', str(build_config), '--host', host]
     context = root / 'trusted-build'
     context.mkdir(mode=0o700)
     _save(context / 'Dockerfile', (ROOT / 'producer/Dockerfile').read_bytes())
@@ -117,6 +122,12 @@ def prepare_dependencies(root):
         require(process.error is None and process.exit_code == 0, 'producer_image_setup_failed')
     image = (root / 'image-id').read_text().strip()
     require(re.fullmatch(r'sha256:[0-9a-f]{64}', image), 'invalid_built_image')
+    # Buildx writes its own state below --config even without a config.json.
+    # Preserve that build state; the execution boundary still requires a new,
+    # empty configuration directory and independently checks the pinned CLI.
+    execution_config = root / 'docker-execution-config'
+    execution_config.mkdir(mode=0o700)
+    runtime = DockerRuntime(docker, DOCKER_SHA256, host, execution_config)
     return runtime, image, wheelhouse
 
 
@@ -304,6 +315,10 @@ def main():
         require(len(sys.argv) == 2 and sys.argv[1] in {'prepare', 'prepare-merge', 'attest', 'finish'}, 'invalid_producer_command')
         return {'prepare': prepare, 'prepare-merge': lambda: prepare('github_merge'),
                 'attest': attest, 'finish': finish}[sys.argv[1]]()
+    except ProducerError as error:
+        code = error.code if type(error.code) is str and error.code in PRODUCER_FAILURE_CODES else 'producer_control_refused'
+        print('delivery-review: producer measurement or provenance step refused code=' + code, flush=True)
+        return 2
     except Exception:
         # Never emit untrusted source/log/exception text into Actions commands.
         print('delivery-review: producer measurement or provenance step refused')
