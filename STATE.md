@@ -14,7 +14,7 @@ Required gates and pending evidence: [RELEASE-1.0.md](docs/RELEASE-1.0.md).
 | Local M0 validation on Windows / Python 3.12 | PASS: 51 tests, 40 synthetic cases and 20 frozen files; see M0-VALIDATION.md. |
 | EC pool Windows / Python 3.12 CI | `m0-contracts` is the configured route; execution results are the per-commit `ec / m0-contracts` check and EC receipt. |
 | Linux CI | NOT_RUN; no qualified Linux pool lane. A local Ubuntu 24.04 WSL2 / Python 3.11.16 environment now runs focused development checks; full qualification remains pending. |
-| Installed engine CLI/JSON adapters | Three hash-pinned wheels exercised through public CLIs on authored Windows/Python 3.12 probes; pure adapters implemented. Bounded execution integration and Linux qualification pending. See SPEC-003. |
+| Installed engine CLI/JSON adapters | Bounded static execution and native adapters implemented; real pinned CLI probes on Windows/Python 3.12 and Linux/Python 3.11. Full product qualification remains separate. See SPEC-003. |
 | Local evidence bundle and offline replay | Implemented for saved normalized observations; see EVIDENCE-BUNDLES.md. No provider mapping or producer authentication. |
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
 | Raw workflow-run selection | Pure kernel implemented with authored byte/page controls; not a full provider. Listing attempt and test checkout remain unconfirmed. |
@@ -24,10 +24,10 @@ Required gates and pending evidence: [RELEASE-1.0.md](docs/RELEASE-1.0.md).
 | Observation inspect/verify/replay/refresh, final recheck and JSON/Markdown/HTML output | Implemented; raw replay dispatches the saved mapper version. Mapper 2 resolves narrowly qualified listing omissions under ADR-002; mapper 1 output remains byte-identical. No delivery readiness or producer claim. |
 | Installable CLI and source provenance | Development sdist/wheel build and an installed observation replay outside the source checkout completed. Bundled offline resources, clean-source identity and inventory controls implemented; exact-release qualification pending. |
 | Complete inspection policy identity | ADR-003 and strict profile validator bind acquisition/producer selectors to the frozen policy identity. This does not yet compose a full readiness report. |
-| Safe static source materialization | Local canonical Git objects can be independently hashed and materialized without checkout/hooks/filters. Remote acquisition and repository membership qualification pending. See SPEC-005. |
-| Artifact transport | Not implemented. |
-| Qualified producer workflow and pytest/JUnit parser | Bounded pytest 8.4.2 xunit2 parser implemented with real authored pytest probes. Hosted producer and independent artifact/job binding remain pending. See SPEC-002 and SPEC-004. |
-| Product JSON/Markdown/HTML reports | Saved-report replay emits contract-v1 JSON. Observation JSON/Markdown/HTML are separate; full delivery composition remains pending. |
+| Safe static source materialization | Bounded public/authenticated acquisition, exact object validation and offline restoration implemented; real public/private fetch feasibility passed both platforms. Full product source qualification pending. See SPEC-005. |
+| Artifact transport | Bounded metadata/ZIP/attestation acquisition, exact raw capture and versioned replay implemented. Signed locators are explicitly omitted; original archives and compressed bundles remain. See SPEC-007. |
+| Qualified producer workflow and pytest/JUnit parser | Parser, isolated producer candidate, official offline verifier and independent evidence binder implemented. Local Docker boundary controls passed; hosted producer registry remains empty pending qualification. See SPEC-004, SPEC-006 and SPEC-008. |
+| Product JSON/Markdown/HTML reports | Full composer, inspection CLI and original-evidence envelope implemented with authored controls on both platforms. Saved normalized and observation-only formats remain distinct. See SPEC-009. |
 | E01–E18 product integration | NOT_RUN. |
 
 The normative baseline is recorded in `acceptance/contract-freeze.json`.
@@ -45,9 +45,9 @@ instruction, Actions now uses the existing EC pool through `m0-contracts`; see
 `docs/CI-POOL.md`. The hosted workflow has been removed, and its old result is
 retained as history. A Windows pool pass does not qualify Linux.
 
-Next gates: finish bounded source/scanner/artifact execution, implement the
-isolated producer and verified attestation chain, then compose reports and
-qualify the public reference flow on Linux/Python 3.11. Independent reproduction
+Next gates: qualify the installed complete inspection flow, publish and exercise
+the standard producer/reference chain on Linux/Python 3.11, and record actual
+E01–E18 outcomes. Independent reproduction
 remains distinct from local tests. Platform metadata alone cannot satisfy these
 obligations. The downloaded run-log ZIPs have no trustworthy per-step file
 boundary; log text and artifact names cannot prove the producing job.

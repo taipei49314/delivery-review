@@ -1,16 +1,17 @@
 # delivery-review
 
 Review the evidence for a fixed GitHub pull request under an explicit policy.
-The planned product connects Checkwash, Pinwash and optional Ledgerwash results
+The development CLI connects Checkwash, Pinwash and optional Ledgerwash results
 with the PR's source identity, GitHub Actions execution and pytest evidence.
 Its output supports human review; it does not prove task correctness.
 
 **Current milestone: implementation toward 1.0 (`1.0.0.dev0`), not a stable release.**
-The M0 contracts and acceptance specifications remain frozen. A source-checkout
-CLI now captures GitHub metadata and derives platform observations, including
-current-run/attempt/job/check associations and final rechecks. Offline replay uses
-the same mapper over preserved raw bytes. This does not authenticate a producer
-or decide delivery readiness. All E01–E18 product integrations remain **NOT_RUN**.
+The M0 contracts and acceptance specifications remain frozen. Full inspection
+collects original GitHub/source/artifact bytes, runs pinned static readers and
+composes JSON, Markdown and HTML reports under an independently approved policy.
+Offline replay reconstructs source and reparses native streams, including fresh
+offline signature verification. The standard producer and full release still
+need hosted qualification: all E01–E18 product integrations remain **NOT_RUN**.
 
 The remaining acceptance criteria and implementation order are tracked in
 [RELEASE-1.0.md](docs/RELEASE-1.0.md). Source is licensed under Apache-2.0;
@@ -24,6 +25,11 @@ qualification. This profile is deliberately separate from delivery readiness.
 
 ## What is implemented
 
+- Full `inspect`, `verify`, `replay` and `refresh` commands with exact source
+  snapshots, independent test/producer binding and the unchanged three-axis
+  decision contract. [SPEC-009](docs/specs/SPEC-009-full-inspection.md) describes
+  the original-evidence envelope, toolchain and replay limits. The bundled
+  qualified-producer registry remains empty until real qualification exists.
 - Six offline JSON Schemas and strict cross-document validation.
 - A reference state reducer with independent evidence, freshness and policy axes.
 - A separate strict GitHub observation profile and pure run-selection kernel over
@@ -45,7 +51,7 @@ qualification. This profile is deliberately separate from delivery readiness.
 - Candidate locks for Checkwash 0.10.0, Pinwash 0.1.1 and Ledgerwash 0.5.0.
   Their published wheels were checked by SHA-256, METADATA and RECORD. Public
   CLI probes and pure adapters retain native findings, verdicts and coverage.
-  Full scanner execution integration remains pending; see
+  Bounded isolated execution and native adapters are implemented; see
   [SPEC-003](docs/specs/SPEC-003-engine-adapters.md).
 - A bounded pytest 8.4.2 xunit2 parser with real authored pytest probes;
   [SPEC-002](docs/specs/SPEC-002-pytest-producer.md) separates parsing from
@@ -89,10 +95,10 @@ python -m unittest discover -s tests -v
 ```
 
 The validator checks the frozen M0 contracts. The unittest suite also exercises
-M1 storage, replay, profile validation, HTTP boundaries, acquisition and raw
-mapping with controlled synthetic inputs. These checks do not run
-the 40 preregistered scenarios through a complete product, execute engines or
-query GitHub.
+storage, replay, profiles, HTTP boundaries, static Git objects, subprocess limits,
+producer isolation controls and full orchestration with authored inputs. Tests
+that mock HTTP, scanner results or signatures say so explicitly. These are not
+the real E01–E18 product acceptance runs, and do not query GitHub by default.
 Wheel acquisition is a separate optional operation documented in
 [ENGINE-LOCK.md](docs/ENGINE-LOCK.md), and is not part of ordinary contract CI.
 

@@ -90,6 +90,7 @@ _CODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 # Arbitrary caller-supplied reasons remain subject to the ordinary seal limit.
 _TERMINATION_RESERVE = sorted(ACQUISITION_ERRORS | {
     "collection_incomplete", "subject_unavailable", "pagination_incomplete", "unsupported_fork",
+    "inspection_stage_failed", "collection_in_progress",
 })
 
 
@@ -347,6 +348,19 @@ that writer is unusable and the directory is not reused. No raw body is parsed.
 
     def _active(self) -> None:
         _need(not self._closed and not self._failed, "capture writer is sealed or failed")
+
+    @_boundary
+    def snapshot(self) -> VerifiedCapture:
+        """Immutable in-memory initial facts for first-party inspection stages.
+
+        This does not seal the capture or create its completion marker. The
+        explicit in-progress termination cannot be mistaken for final evidence.
+        """
+        self._active()
+        manifest = {**self._manifest, "termination": {
+            "status": "stopped", "reason_codes": ["collection_in_progress"]}}
+        return parse_capture(canonical_bytes(manifest) + b"\n", self._profile_bytes,
+                             self._bodies, limits=self._limits)
 
     @_boundary
     def record(self, metadata: dict, body: bytes | None, *, complete: bool = True) -> dict:

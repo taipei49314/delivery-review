@@ -56,11 +56,14 @@ def _run_identity(detail, selected, workflow, profile, head):
 
 
 def collect_observations(pr_url: str, profile_bytes: bytes, destination, *, transport,
-                         collector: dict, clock=utc_now):
+                         collector: dict, clock=utc_now, before_recheck=None):
     """Acquire original bytes into a new sealed capture, including diagnostic stops.
 
     transport.get is the only network boundary. It is never used by raw replay.
     Caller identifies its clean collector source; CLI verifies that provenance.
+    before_recheck is a first-party orchestration callback receiving immutable
+    initial facts. Static engines/artifact acquisition finish there, before the
+    final PR/run rechecks. It never receives a mutable writer or credentials.
     """
     profile = load_observation_profile(profile_bytes)
     number = parse_pr_url(pr_url, profile)
@@ -185,6 +188,11 @@ def collect_observations(pr_url: str, profile_bytes: bytes, destination, *, tran
                         job_id=job["id"], check_run_id=check_id)
             if len(totals) != 1 or len(seen) != next(iter(totals), -1):
                 stopped.add("pagination_incomplete")
+        if before_recheck is not None:
+            try:
+                before_recheck(writer.snapshot())
+            except (ContractError, OSError):
+                stopped.add("inspection_stage_failed")
         get("pull_request", phase="final")
         for workflow in sorted(profile["workflows"], key=lambda value: value["id"]):
             selected = select(workflow, pr, "final")

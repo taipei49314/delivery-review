@@ -87,10 +87,15 @@ unforgeable capability or an externally accepted proof format.
 For deterministic replay inventories, optional `attestation_retention` carries
 the original historical execution. Its raw inventory and tool pin are checked,
 and its artifact, bundle, trust root and expectation bytes must equal the fresh
-verification's inputs. It supplies retained bytes only; only the fresh execution
-determines trust. The orchestrator saves the new process audit outside the
-canonical report inventory. A historical successful exit cannot override a fresh
-verification failure, and changed signed inputs cannot reuse an old audit.
+verification's inputs. Fresh verification is mandatory. After it succeeds, the
+binder also requires the original execution's raw process and authenticated
+claims to pass the same checks. This second check can only preserve an original
+failure; historical data cannot grant trust without the fresh verification.
+Consequently, fresh success cannot upgrade an originally failed verification,
+and a historical successful exit cannot override fresh failure. The orchestrator
+also refuses to add a proof that was absent from the original capture, and saves
+the fresh process audit outside the canonical report inventory. Changed signed
+inputs cannot reuse an old audit.
 
 Transport/run digest consistency alone leaves the job-bearing test evidence at
 `reported`. Only the full signed job assertion, independently cross-checked

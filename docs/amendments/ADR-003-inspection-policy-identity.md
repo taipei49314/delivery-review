@@ -40,11 +40,17 @@ No fields are inferred from currently green jobs or the reviewed PR.
 - External-file policy, exact repository ID, all three candidate engine pins.
 - Checkwash and Pinwash required; at least one required pytest report.
 - Static engines use fixed high threshold; Ledger completeness behavior is explicit.
+  Their evaluation date is the original inspection's UTC observation date,
+  derived from `observed_at` and retained with execution inputs. Replay never
+  substitutes today's date when evaluating expiring native exemptions.
 - GitHub workflow ID/App/name selectors must agree with the acquisition profile.
 - pytest evidence requires workflow binding to a full pinned producer revision.
 - Fixed receipt/JUnit members, pytest 8.4.2 xunit2, fixed attestation predicate and
   artifact naming algorithm. The name locates evidence; SPEC-004 independently
   binds the actual artifact ID/digest/run/attempt/job.
+- The first producer profile fixes the test selector to the literal `tests`.
+  Caller-selected paths or commands cannot satisfy it. Configurable selection
+  would require a versioned, policy-bound protocol and another qualification.
 - A direct CI-only requirement is platform-bound. Unsupported matrix or selector
   combinations are rejected before acquisition rather than guessed.
 

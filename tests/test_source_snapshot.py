@@ -15,7 +15,8 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from delivery_review.source_snapshot import SnapshotError, SnapshotLimits, materialize_snapshot, verify_snapshot
+from delivery_review.source_snapshot import (SnapshotError, SnapshotLimits, materialize_snapshot,
+    verify_snapshot, export_snapshot, restore_snapshot)
 from delivery_review.contracts import MAX_JSON_BYTES, canonical_bytes
 
 
@@ -63,6 +64,44 @@ class SourceSnapshotTests(unittest.TestCase):
     def build(self, value, base, head, **options):
         return materialize_snapshot(self.destination, repository="fixture-owner/fixture-repo", head_sha=head,
                                     base_tip_sha=base, objects=value.objects, git_executable=self.git, **options)
+
+    def test_offline_export_restore_preserves_nondefault_compression_and_inventory(self):
+        value, common, base, head = fixture()
+        loose = {oid: zlib.compress(raw, level=0) for oid, raw in value.objects.items()}
+        snapshot = self.build(value, base, head, loose_objects=loose)
+        saved = export_snapshot(snapshot)
+        self.assertEqual(loose, saved)
+        restored = restore_snapshot(self.root / "restored", inventory_bytes=snapshot.inventory_bytes,
+                                    loose_objects=saved, git_executable=self.git)
+        self.assertEqual(snapshot.inventory_bytes, restored.inventory_bytes)
+        self.assertEqual(loose, export_snapshot(restored))
+        self.assertEqual(b"head\r\n", (restored.root / "README.txt").read_bytes())
+
+    def test_restore_rejects_missing_changed_extra_and_concatenated_objects(self):
+        value, common, base, head = fixture()
+        snapshot = self.build(value, base, head)
+        saved = export_snapshot(snapshot)
+        oid = next(iter(saved))
+        variants = [dict(saved), dict(saved), dict(saved), dict(saved)]
+        variants[0].pop(oid)
+        variants[1][oid] = zlib.compress(b"blob 0\0")
+        variants[2]["f" * 40] = saved[oid]
+        variants[3][oid] += zlib.compress(b"extra")
+        for i, forged in enumerate(variants):
+            with self.subTest(i=i), self.assertRaises(SnapshotError):
+                restore_snapshot(self.root / f"bad{i}", inventory_bytes=snapshot.inventory_bytes,
+                                 loose_objects=forged, git_executable=self.git)
+
+    def test_restore_does_not_trust_inventory_merge_base_or_repository_membership(self):
+        value, common, base, head = fixture()
+        snapshot = self.build(value, base, head)
+        saved = export_snapshot(snapshot)
+        for i, (key, changed) in enumerate((("merge_base_sha", head), ("repository_membership", "confirmed"))):
+            document = snapshot.inventory
+            document[key] = changed
+            with self.assertRaises(SnapshotError):
+                restore_snapshot(self.root / f"claimed{i}", inventory_bytes=canonical_bytes(document) + b"\n",
+                                 loose_objects=saved, git_executable=self.git)
 
     def test_exact_complete_source_keeps_head_base_and_merge_base_distinct(self):
         value, common, base, head = fixture()

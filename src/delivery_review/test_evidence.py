@@ -437,6 +437,12 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                 "producer_sha": selector["producer_sha"]}
             diagnostics["attestation_expected"] = expected
             _attestation_execution(attestation, expected, artifact.archive_bytes)
+            if attestation_retention is not None:
+                # Fresh cryptography is necessary but must not retroactively
+                # replace a failed original verification with successful proof.
+                # The historical execution is only a negative gate; it cannot
+                # authorize anything without the fresh verification above.
+                _attestation_execution(attestation_retention, expected, artifact.archive_bytes)
             _qualification(qualification, selector, source["mode"])
             evidence.update(binding_level="workflow_bound", producer_proof={"method": "github_api_referenced_workflow",
                 "repository_id": selector["producer_repository_id"], "path": selector["producer_path"], "sha": selector["producer_sha"],

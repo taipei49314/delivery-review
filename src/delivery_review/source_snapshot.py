@@ -271,7 +271,8 @@ def _git(executable, root, arguments, limits, deadline):
 
 def materialize_snapshot(destination, *, repository: str, head_sha: str, base_tip_sha: str,
                          objects: Mapping[str, bytes], git_executable: str | Path,
-                         limits: SnapshotLimits = SnapshotLimits()) -> SourceSnapshot:
+                         limits: SnapshotLimits = SnapshotLimits(),
+                         loose_objects: Mapping[str, bytes] | None = None) -> SourceSnapshot:
     """Build a new private snapshot from the exact complete reachable object set.
 
     This does not fetch or attest GitHub repository membership. The caller owns
@@ -293,6 +294,20 @@ def materialize_snapshot(destination, *, repository: str, head_sha: str, base_ti
         _need(isinstance(objects, Mapping) and 0 < len(objects) <= limits.max_objects, "object_count_limit")
         objects = dict(objects)
         parsed, object_inventory, total, disk = _objects(objects, limits, deadline)
+        encoded = {oid: zlib.compress(raw) for oid, raw in objects.items()}
+        if loose_objects is not None:
+            _need(isinstance(loose_objects, Mapping) and set(loose_objects) == set(objects), "loose_object_inventory_mismatch")
+            encoded, disk = dict(loose_objects), 0
+            for item in object_inventory:
+                raw = encoded[item["oid"]]
+                _need(type(raw) is bytes and 0 < len(raw) <= limits.max_object_disk_bytes, "object_disk_limit")
+                disk += len(raw)
+                _need(disk <= limits.max_object_disk_bytes, "object_disk_limit")
+                decoder = zlib.decompressobj()
+                content = decoder.decompress(raw, limits.max_object_bytes + 1)
+                _need(decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail
+                      and content == objects[item["oid"]], "loose_object_content_mismatch")
+                item.update(loose_size_bytes=len(raw), loose_sha256=_sha256(raw))
         _closure(parsed, head_sha, base_tip_sha, deadline)
         files, materialized = _files(parsed, parsed[head_sha][2][0], limits, deadline)
         # Validate paths/expansion in every historical tree, including BASE policy
@@ -317,7 +332,7 @@ def materialize_snapshot(destination, *, repository: str, head_sha: str, base_ti
             _check_deadline(deadline)
             directory = git_dir / "objects" / oid[:2]
             directory.mkdir(mode=0o700, exist_ok=True)
-            _write(directory / oid[2:], zlib.compress(raw))
+            _write(directory / oid[2:], encoded[oid])
         for oid in (head_sha, base_tip_sha):
             _need(_git(executable, root, ["rev-parse", "--verify", oid + "^{commit}"], limits, deadline) == (oid + "\n").encode(),
                   "git_commit_identity_mismatch")
@@ -339,9 +354,62 @@ def materialize_snapshot(destination, *, repository: str, head_sha: str, base_ti
         return SourceSnapshot(root, repository, head_sha, base_tip_sha, merge_base, inventory_bytes)
     except SnapshotError:
         raise
-    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+    except (OSError, ValueError, TypeError, UnicodeError, zlib.error) as exc:
         # Do not expose PR paths, object contents or subprocess stderr in errors.
         raise SnapshotError("source_snapshot_failed") from exc
+
+
+def export_snapshot(snapshot: SourceSnapshot) -> dict[str, bytes]:
+    """Save exact bounded loose-object bytes after independently verifying them."""
+    verify_snapshot(snapshot)
+    objects = {}
+    for row in snapshot.inventory["objects"]:
+        oid = row["oid"]
+        objects[oid] = _read(snapshot.root / ".git/objects" / oid[:2] / oid[2:], row["loose_size_bytes"],
+            {"size_bytes": row["loose_size_bytes"], "sha256": row["loose_sha256"]})
+    verify_snapshot(snapshot)
+    return objects
+
+
+def restore_snapshot(destination, *, inventory_bytes: bytes, loose_objects: Mapping[str, bytes],
+                     git_executable: str | Path) -> SourceSnapshot:
+    """Rebuild static files offline with the original compression/inventory bytes.
+
+    Keeping original compressed objects preserves source identity across zlib
+    versions without trusting the saved inventory's semantic claims.
+    """
+    try:
+        limits = SnapshotLimits()
+        document = loads_strict(inventory_bytes)
+        _need(type(document) is dict and type(document.get("objects")) is list
+              and 0 < len(document["objects"]) <= limits.max_objects and isinstance(loose_objects, Mapping),
+              "invalid_snapshot_inventory")
+        rows = document["objects"]
+        _need(all(type(row) is dict and _sha(row.get("oid")) for row in rows), "invalid_snapshot_inventory")
+        _need(len({row["oid"] for row in rows}) == len(rows)
+              and {row["oid"] for row in rows} == set(loose_objects), "loose_object_inventory_mismatch")
+        objects, disk, total = {}, 0, 0
+        for row in rows:
+            raw = loose_objects[row["oid"]]
+            _need(type(raw) is bytes and 0 < len(raw) <= limits.max_object_disk_bytes, "object_disk_limit")
+            disk += len(raw)
+            _need(disk <= limits.max_object_disk_bytes, "object_disk_limit")
+            decoder = zlib.decompressobj()
+            content = decoder.decompress(raw, limits.max_object_bytes + 1)
+            _need(len(content) <= limits.max_object_bytes and decoder.eof and not decoder.unused_data
+                  and not decoder.unconsumed_tail, "invalid_or_oversized_loose_object")
+            total += len(content)
+            _need(total <= limits.max_total_object_bytes, "total_object_size_limit")
+            objects[row["oid"]] = content
+        snapshot = materialize_snapshot(destination, repository=document["repository"], head_sha=document["head_sha"],
+            base_tip_sha=document["base_tip_sha"], objects=objects, loose_objects=loose_objects, git_executable=git_executable)
+        _need(snapshot.inventory_bytes == inventory_bytes, "restored_snapshot_inventory_mismatch")
+        verify_snapshot(snapshot)
+        return snapshot
+    except SnapshotError:
+        raise
+    except (ContractError, OSError, ValueError, TypeError, KeyError, zlib.error) as exc:
+        raise SnapshotError("source_snapshot_restore_failed") from exc
 
 
 def _scan_snapshot(root, files, deadline):

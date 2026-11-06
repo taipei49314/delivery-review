@@ -22,14 +22,14 @@ may satisfy requirements. Unsupported inputs retain missing/error observations.
 
 | Gate | Deliverable and acceptance evidence | Current status |
 | --- | --- | --- |
-| G01 Raw capture and replay | Create-once raw bytes, exact inventories, bounded acquisition, deterministic version-dispatched replay, independent freshness | Implemented; Windows development tests and one public API smoke; full Linux qualification pending |
-| G02 Source identity | Exact repository/head/base/merge-base; independently established checkout; two-parent merge proof where declared; safe static object access | In progress |
-| G03 Producer and test evidence | Pinned reusable producer, independently bound artifact ID/digest/run/attempt/job, bounded ZIP/XML parsing, genuine zero/all-skip/failure controls | Parser implemented; artifact provenance and hosted qualification pending |
-| G04 Engine integration | Hash-pinned isolated public CLIs, immutable subject, preserved raw output/native verdict/findings/coverage, time/output limits, negative probes | Real CLI contract probes done; adapter/runner integration in progress |
-| G05 Policy and reports | Approved selector identity, required obligations, unchanged frozen state algebra, JSON/Markdown/self-contained HTML, actionable evidence references | M0 evaluator exists; real evidence composition pending |
-| G06 Installed CLI | Source and wheel distributions, bundled offline schemas, release source identity, clean Linux/Python 3.11 install and complete inspect/replay/refresh | In progress |
+| G01 Raw capture and replay | Create-once raw bytes, exact inventories, bounded acquisition, deterministic version-dispatched replay, independent freshness | Implemented; Windows/Linux development controls and public raw API probes; full candidate qualification pending |
+| G02 Source identity | Exact repository/head/base/merge-base; independently established checkout; two-parent merge proof where declared; safe static object access | Static acquisition/restore implemented; real public/private fetches on Windows/Linux; full product source-mode qualification pending |
+| G03 Producer and test evidence | Pinned reusable producer, independently bound artifact ID/digest/run/attempt/job, bounded ZIP/XML parsing, genuine zero/all-skip/failure controls | Isolated producer, artifact transport, offline signature verifier and binder implemented; actual local Docker controls pass; hosted custom-predicate qualification pending |
+| G04 Engine integration | Hash-pinned isolated public CLIs, immutable subject, preserved raw output/native verdict/findings/coverage, time/output limits, negative probes | Implemented; real three-engine static probes on Windows/Linux; complete-product acceptance pending |
+| G05 Policy and reports | Approved selector identity, required obligations, unchanged frozen state algebra, JSON/Markdown/self-contained HTML, actionable evidence references | Composer and renderers implemented; authored cross-document/race/error controls pass; real qualified readiness chain pending |
+| G06 Installed CLI | Source and wheel distributions, bundled offline schemas, release source identity, clean Linux/Python 3.11 install and complete inspect/replay/refresh | Earlier installed observation replay passed both platforms; new full inspection CLI implemented, exact-candidate install qualification pending |
 | G07 Acceptance | E01–E18 executed against declared product/version/environment; no synthetic fixture relabeled as integration | NOT_RUN |
-| G08 Open-source adoption | Apache-2.0 source, dependency notices, contributor/security docs, public reference fixture/repo, independent maintainer reproduction without private access/EC | License being added; public reference and external reproduction pending |
+| G08 Open-source adoption | Apache-2.0 source, dependency notices, contributor/security docs, public reference fixture/repo, independent maintainer reproduction without private access/EC | License/notices/contributor/security docs implemented; public reference and external reproduction pending |
 | G09 Release | Exact source SHA, tested artifact hashes, qualification receipts, changelog, install/replay instructions; stable tag only after required gates pass | Not released |
 
 ## Implementation order

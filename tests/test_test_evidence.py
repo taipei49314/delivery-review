@@ -350,6 +350,31 @@ class TestEvidenceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "attestation_retention_inputs_mismatch"):
             self.fixture.bound(attestation=replace(fresh, raw_files=changed), attestation_retention=original)
 
+    def test_fresh_success_cannot_upgrade_failed_or_invalid_original_verification(self):
+        expected = bind_test_evidence(**self.fixture.args()).diagnostics["attestation_expected"]
+        fresh = self.fixture.fake_attestation(expected)
+        for mode in ("native_failure", "timeout", "wrong_authenticated_claim"):
+            manifest = fresh.manifest
+            raw = dict(fresh.raw_files)
+            if mode == "native_failure":
+                manifest["process"]["exit_code"] = 1
+            elif mode == "timeout":
+                manifest["process"].update(exit_code=None, termination="timeout")
+            else:
+                output = json.loads(raw["stdout"])
+                output[0]["verificationResult"]["signature"]["certificate"]["sourceRepositoryIdentifier"] = "9999"
+                raw["stdout"] = json.dumps(output).encode()
+                manifest["files"]["stdout"].update(sha256=digest(raw["stdout"]), size_bytes=len(raw["stdout"]))
+            original = replace(fresh, manifest_bytes=canonical_bytes(manifest), raw_files=raw,
+                               observation_bytes=b'{"status":"verified_claims"}')
+            first = self.fixture.bound(attestation=original)
+            replay = self.fixture.bound(attestation=fresh, attestation_retention=original)
+            with self.subTest(mode=mode):
+                self.assertEqual("untrusted", first.obligation["outcome"])
+                self.assertEqual(first.obligation, replay.obligation)
+                self.assertEqual(first.evidence, replay.evidence)
+                self.assertEqual(first.raw_files, replay.raw_files)
+
 
 if __name__ == "__main__":
     unittest.main()

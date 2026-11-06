@@ -73,7 +73,7 @@ def _contains_token(token, *, headers=(), body=None, incomplete=False) -> bool:
     return False
 
 
-def _response_headers(headers, token):
+def _response_headers(headers, token, *, validator=validate_response_headers):
     items = list(headers.items())
     if _contains_token(token, headers=[value for _, value in items]):
         return {}, "sensitive_response_refused"
@@ -88,7 +88,7 @@ def _response_headers(headers, token):
             return {}, "unsafe_response_headers"
         retained[name] = value
     try:
-        return validate_response_headers(retained), None
+        return validator(retained), None
     except (ValueError, TypeError):
         # In particular, never retain a credential-bearing or alternate-host
         # Link value as either metadata or an interpolated exception message.
@@ -182,7 +182,7 @@ def _encode_result(result):
     return json.dumps(encoded, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
 
 
-def _decode_result(raw, max_bytes, token):
+def _decode_result(raw, max_bytes, token, *, validator=validate_response_headers):
     if type(raw) is not bytes or len(raw) > ((max_bytes + 2) // 3) * 4 + 65536:
         raise ValueError("invalid worker response")
     result = json.loads(raw)
@@ -199,7 +199,7 @@ def _decode_result(raw, max_bytes, token):
     status, complete, error = result["status_code"], result["complete"], result["error"]
     if (status is not None and (type(status) is not int or not 100 <= status <= 599)) or type(complete) is not bool:
         raise ValueError("invalid worker response")
-    result["response_headers"] = validate_response_headers(result["response_headers"])
+    result["response_headers"] = validator(result["response_headers"])
     if error is not None and (type(error) is not dict or set(error) != {"code"}
                               or error["code"] not in ACQUISITION_ERRORS):
         raise ValueError("invalid worker response")

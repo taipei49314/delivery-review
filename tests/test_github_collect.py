@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from delivery_review.contracts import canonical_bytes
+from delivery_review.contracts import ContractError, canonical_bytes
 from delivery_review.evidence.capture import CaptureWriter, verify_capture
 from delivery_review.observations import render_markdown, replay_observations
 from delivery_review.providers.github_collect import collect_observations
@@ -93,6 +93,39 @@ class GitHubCollectTests(unittest.TestCase):
         after = {str(p.relative_to(self.root / "capture")): p.read_bytes()
                  for p in (self.root / "capture").rglob("*") if p.is_file()}
         self.assertEqual(before, after)
+
+    def test_inspection_stage_receives_immutable_initial_facts_before_final_recheck(self):
+        source = make_capture()
+        transport = ScriptedTransport(source)
+        staged = []
+        def stage(capture):
+            staged.append(capture)
+            self.assertEqual("final", transport.pending[0]["phase"])
+            self.assertFalse(any(row["phase"] == "final" for row in capture.manifest["records"]))
+            self.assertEqual(["collection_in_progress"], capture.manifest["termination"]["reason_codes"])
+            self.assertFalse((self.root / "staged/capture.json").exists())
+            with self.assertRaises(TypeError):
+                capture.bodies["raw/changed.body"] = b"altered"
+        completed = collect_observations(PR_URL, source.profile_bytes, self.root / "staged", transport=transport,
+                                         collector=IDENTITY, clock=lambda: NOW, before_recheck=stage)
+        self.assertEqual(1, len(staged))
+        self.assertFalse(transport.pending)
+        self.assertEqual("completed", completed.manifest["termination"]["status"])
+        self.assertFalse(any(row["phase"] == "final" for row in staged[0].manifest["records"]))
+        self.assertEqual("current", map_capture(completed, mode="live")["freshness"])
+
+    def test_failed_inspection_stage_still_records_final_freshness_without_success_marker(self):
+        source = make_capture()
+        transport = ScriptedTransport(source)
+        def stage(capture):
+            raise ContractError("untrusted detail must not be persisted as a diagnostic")
+        completed = collect_observations(PR_URL, source.profile_bytes, self.root / "stage-failed", transport=transport,
+                                         collector=IDENTITY, clock=lambda: NOW, before_recheck=stage)
+        self.assertFalse(transport.pending)
+        self.assertEqual("stopped", completed.manifest["termination"]["status"])
+        self.assertEqual(["inspection_stage_failed"], completed.manifest["termination"]["reason_codes"])
+        self.assertNotIn(b"untrusted detail", completed.manifest_bytes)
+        self.assertTrue(any(row["phase"] == "final" for row in completed.manifest["records"]))
 
     def test_request_budget_stops_before_an_extra_network_operation(self):
         source = make_capture()
