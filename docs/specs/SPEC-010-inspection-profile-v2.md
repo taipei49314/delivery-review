@@ -42,6 +42,47 @@ damaged ZIP cannot hide that established contradiction behind a later parser
 error. Partial bodies, transport errors and ambiguous selection do not establish
 this proof. Historical artifact mapping and v1 interpretation stay unchanged.
 
+The hosted precreation control established that different jobs can upload the
+same artifact name in one run. A complete original listing with multiple exact
+name matches remains untrusted with `artifact_ambiguous`; no candidate is chosen
+by upload time, ordering or contents. The v2 binder independently remaps the raw
+capture and checks its repository/run/attempt/check scope before reporting that
+specific refusal. Incomplete listings cannot establish this complete ambiguity
+proof. Original listing bytes remain linked to the report. Historical v1 keeps
+its generic missing-artifact interpretation. This correction additionally requires
+the explicit execution-plan version 3 selection basis in [ADR-005](../amendments/ADR-005-artifact-ambiguity.md);
+saved version 2 plans retain their original interpretation even with profile v2.
+
+The same explicit plan3 `evidence_selection_basis: scoped_original_refusals_v1`
+enables the E03 source-refusal correction. Only a complete fixed PR merge-ref
+response whose full SHA matches a canonical Git object can establish the
+relationship. Two distinct but incorrect ordered parents yield mismatch/block
+with `merge_parents_mismatch`, retaining the native rejection code. Zero or one
+parent leaves an untrusted parent-proof gap; more than two parents yields
+unsupported/clear with `tested_source_mode_unsupported`. Incomplete, unrelated
+or malformed inputs cannot establish this contradiction. Missing reference or
+object proof never falls back to head. Unknown custom/queue receipt source modes
+continue to fail the unchanged receipt schema; no unsupported claim is accepted.
+Profile v1 and legacy/version2 plans keep their previous dispositions, and all
+independently known CI/scanner blocks remain present.
+
+With this same explicit plan3 basis, a complete safe ZIP containing exactly one
+schema-valid `receipt.json` and no JUnit is missing with `junit_missing`. A second
+strict singleton validation verifies headers, paths/types, physical layout,
+expansion/resource bounds and CRC before establishing this narrow absence.
+There is no positive partial-artifact path. Extra members, symlinks, duplicates,
+unsafe paths, invalid receipts and corrupt/oversized archives remain errors, and
+a missing acquisition remains `artifact_missing`. The earlier scoped digest
+contradiction check and independently known native blocks take precedence.
+
+The same basis gives completed native scanner/ledger coverage gaps an
+`unsupported` outcome, preserving native verdicts and independent effects. Closed
+aliases identify deadlines, unknown schemas, coverage gaps and exemption review.
+Known Checkwash weakening additionally requires an actual blocking high/critical
+`ASSERT_REMOVED` or `ASSERT_WEAKENED` finding. Native pass results, including the
+documented #419 escape, remain pass. Details and historical dispatch are in
+[ADR-005](../amendments/ADR-005-artifact-ambiguity.md).
+
 ## Exact matrix selection
 
 For example, an approved declaration may contain:

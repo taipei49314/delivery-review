@@ -76,7 +76,7 @@ def _engine(execution, name, profile, snapshot, observed_at):
     return observed, files
 
 
-def _static_obligation(requirement, observed, repository_id, head):
+def _static_obligation(requirement, observed, repository_id, head, *, scoped_refusals=False):
     evidence = evidence_record(requirement, repository_id)
     engine = observed["engine"]
     evidence.update(subject_sha=head, status="error" if observed["status"] == "error" else "observed",
@@ -103,12 +103,33 @@ def _static_obligation(requirement, observed, repository_id, head):
         outcome = "unsupported"
         reasons.append("ledger_unsupported")
     elif observed["coverage"]["status"] != "sufficient":
-        outcome = "missing"
+        outcome = "unsupported" if scoped_refusals else "missing"
         reasons.append("required_engine_coverage_unconfirmed")
+        if scoped_refusals:
+            reasons.append("ledger_coverage_incomplete" if requirement["kind"] == "ledger" else "scanner_coverage_unknown")
     elif observed["verdict"] == "block":
         outcome = "failed"
     else:
         outcome = "satisfied"
+    if scoped_refusals:
+        # Closed aliases describe independently parsed native facts. They do
+        # not replace native verdicts, findings, scope or controller errors.
+        if requirement["kind"] == "scanner":
+            if "engine_timeout" in observed["reason_codes"]:
+                reasons.append("scanner_deadline_exceeded")
+            if "unsupported_findings_contract" in observed["reason_codes"]:
+                reasons.append("scanner_schema_unsupported")
+        if observed["status"] == "completed":
+            if observed["review_required"]:
+                reasons.append("new_exemption_requires_review")
+            if any(row["disposition"] == "allowlisted" for row in engine["findings"]):
+                reasons.append("existing_valid_exemption")
+            if engine["name"] == "checkwash" and observed["known_block"] and any(
+                    row["rule"] in {"ASSERT_REMOVED", "ASSERT_WEAKENED"}
+                    and row["severity"] in {"high", "critical"} and row["disposition"] == "original"
+                    for row in engine["findings"]):
+                reasons.append("test_verification_weakened")
+        evidence["messages"] = sorted(set(reasons))
     return evidence, obligation_record(requirement, evidence, outcome, reasons, effect)
 
 
@@ -169,7 +190,7 @@ def _recheck(capture, observations):
 
 
 def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_inputs,
-                   report_id, mode="offline_replay"):
+                   report_id, mode="offline_replay", evidence_selection_basis="legacy_missing_v1"):
     """Recompute every obligation from original data; caller cannot supply states.
 
     The live orchestrator must perform the capture's final recheck *after* all
@@ -178,6 +199,9 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
     in a complete report with their independent policy block/review effects.
     """
     require(mode in {"live", "offline_replay"}, "invalid_inspection_mode")
+    require(type(evidence_selection_basis) is str
+        and evidence_selection_basis in {"legacy_missing_v1", "scoped_original_refusals_v1"},
+        "unsupported_evidence_selection_basis")
     profile, capture, observations = validated_context(profile_bytes, capture, snapshot)
     require(isinstance(engine_executions, Mapping) and isinstance(test_inputs, Mapping), "invalid_composition_inputs")
     policy = profile["policy"]
@@ -204,8 +228,10 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
         if requirement["kind"] == "test_report":
             values = test_inputs.get(requirement["id"], TestEvidenceInputs())
             require(type(values) is TestEvidenceInputs, "invalid_test_evidence_inputs")
+            selected_inputs = {field.name: getattr(values, field.name) for field in fields(values)}
+            selected_inputs["evidence_selection_basis"] = evidence_selection_basis
             result = bind_test_evidence(profile_bytes=profile_bytes, capture=capture, snapshot=snapshot,
-                requirement_id=requirement["id"], **{field.name: getattr(values, field.name) for field in fields(values)})
+                requirement_id=requirement["id"], **selected_inputs)
             item, obligation = result.evidence, result.obligation
             raw.update(result.raw_files)
             test_diagnostics[requirement["id"]] = result.diagnostics
@@ -232,7 +258,8 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                 item = evidence_record(requirement, policy["repository_id"])
                 obligation = obligation_record(requirement, item, "missing", ["engine_execution_missing"])
             else:
-                item, obligation = _static_obligation(requirement, engine_observations[name], policy["repository_id"], snapshot.head_sha)
+                item, obligation = _static_obligation(requirement, engine_observations[name], policy["repository_id"], snapshot.head_sha,
+                    scoped_refusals=profile["profile_version"] == 2 and evidence_selection_basis == "scoped_original_refusals_v1")
                 # One engine may serve multiple requirements with identical
                 # static selectors; all link to the same actual raw evidence.
                 if name in engine_evidence_ids:

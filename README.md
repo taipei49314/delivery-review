@@ -10,8 +10,9 @@ The M0 contracts and acceptance specifications remain frozen. Full inspection
 collects original GitHub/source/artifact bytes, runs pinned static readers and
 composes JSON, Markdown and HTML reports under an independently approved policy.
 Offline replay reconstructs source and reparses native streams, including fresh
-offline signature verification. The standard producer and full release still
-need hosted qualification: all E01–E18 product integrations remain **NOT_RUN**.
+offline signature verification. The fixed head/merge producer has
+[reviewed hosted qualification](qualification/README.md); full E01–E18 product
+integration and stable-release qualification remain pending.
 
 The remaining acceptance criteria and implementation order are tracked in
 [RELEASE-1.0.md](docs/RELEASE-1.0.md). Source is licensed under Apache-2.0;
@@ -29,7 +30,7 @@ qualification. This profile is deliberately separate from delivery readiness.
   snapshots, independent test/producer binding and the unchanged three-axis
   decision contract. [SPEC-009](docs/specs/SPEC-009-full-inspection.md) describes
   the original-evidence envelope, toolchain and replay limits. The bundled
-  qualified-producer registry remains empty until real qualification exists.
+  registry admits only the two reviewed fixed workflow paths at `3d3e545`.
 - Six offline JSON Schemas and strict cross-document validation.
 - A reference state reducer with independent evidence, freshness and policy axes.
 - A separate strict GitHub observation profile and pure run-selection kernel over

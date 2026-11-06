@@ -15,7 +15,9 @@ The forty normalized examples do not exhaust the variants in that table.
    isolation, platform identity, original artifact upload, official attestation
    verification and receipt/JUnit linkage. Review its exact repository ID,
    workflow path, source SHA and receipt digest before adding a bundled registry
-   entry. The current empty registry cannot be bypassed to manufacture E01.
+   entry. The fixed `3d3e545` head/merge paths now have reviewed entries and
+   [public original evidence](../../qualification/README.md). Other revisions
+   remain unqualified; a missing entry cannot be bypassed to manufacture E01.
 3. Use the public dedicated reference repository and independently approve the
    complete external inspection profile. Record the observed workflow/job/App
    IDs. Generate first-party sources with `examples/reference/render.py`; its

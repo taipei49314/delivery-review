@@ -20,6 +20,8 @@ inherit an earlier commit's test receipt. Frozen expectations remain unchanged.
 | `078c032` runtime with pending documentation-only changes | Local Windows / Python 3.12 | All 549 tests passed in 257.183 seconds. This working-tree run is separate from exact-commit pool CI. |
 | `078c032654f98249a2799588dd3bb82032a37d2e` | Existing EC Windows / Python 3.12.10 lane | 549 tests, zero failures/errors/skips; 138.265-second test step and 152.547-second workload. Frozen validator and tracked-source cleanliness passed. |
 | `3d3e54599066c98f52384c66953b130a01eaaff8` | Clean native Linux / official Python 3.11.16 | 552 tests passed in 21.092 seconds; frozen validator, clean build/install, resources/identity and installed observation replay passed. |
+| `b9c1d2e9ba459882d8b8c94bbe09f7f93f8e9d32` | Clean native Linux / official Python 3.11.16 | 605 tests passed in 36.421 seconds; frozen validator, clean build/install, resources/identity and byte-identical installed observation replay passed. |
+| `b9c1d2e9ba459882d8b8c94bbe09f7f93f8e9d32` | Existing EC Windows / Python 3.12.10 lane | 605 tests, zero failures/errors/skips; 193.437-second test step, 202.890-second workload. Exact-source input digests, frozen validation and source cleanliness passed under unchanged limits. |
 
 The successful native Linux environment was freshly installed with the already
 verified uv 0.12.12, using the official Python build-standalone 3.11.16 release
@@ -45,6 +47,14 @@ The native Linux `8bb4337` package artifacts are:
 These hashes identify observed development artifacts. They are not a stable
 release, publisher signature, or a claim that artifacts built on different
 operating systems are byte-identical.
+
+The later clean native Linux `b9c1d2e` wheel is 206,629 bytes with SHA-256
+`0023e96a9d0072bc35423f699dc8a9747953fb550832a7d498bc306542b6b590`;
+its sdist is 311,741 bytes with SHA-256
+`b06d98f2e4f8e1a025db0aba202a35ca7785f79d17454ad90452657dc4e48e30`.
+Original build/install receipts are in `work/full-qualification-linux-b9c1d2e`.
+The exact-source Windows check is `127786230835`; its private EC receipt is
+retained locally and is not part of the public evidence export.
 
 ## Actual inspect, replay and refresh
 
@@ -166,6 +176,31 @@ canonical JSON SHA-256 was
 `f3d3432ae3851c7714077a81a8331fed95817761a7fff7cca9d26883a63da529`.
 Original source inventories and all replay logs are retained in
 `work/legacy-plan-compatibility-v2-01/`.
+
+The profile-v2 changes received a separate actual compatibility check against
+both the installed `8bb4337` PR 1 reader and installed `3d3e545` signed PR 4
+reader. Both original v1 captures produced byte-identical JSON/Markdown/HTML
+with the new reader under a genuinely disconnected network namespace. Signed
+PR 4 used a fresh pinned official verifier on each side; both exited 0. Original
+trees, observation times, profile versions and execution plans stayed unchanged,
+and no qualification was added. The 78-file receipt is retained under
+`work/profile-v2-legacy-compatibility-01/`.
+
+The installed `b9c1d2e` then inspected the actual new artifact attacks, keeping
+the producer pinned to `3d3e545`. [PR 19](https://github.com/taipei49314/delivery-review-reference/pull/19)
+preserved its original signed ZIP before deleting artifact `13486744886` and
+reuploading the identical ZIP as `13487367915`. Official cryptography exited 0,
+but the new artifact identity did not match the signed claims: the test
+obligation was untrusted with `attestation_claims_unconfirmed`.
+[PR 20](https://github.com/taipei49314/delivery-review-reference/pull/20)
+created artifact `13488020622` before the producer uploaded `13487253094` with
+the same exact name. Both existed; upload success did not establish uniqueness.
+The collector refused selection with `artifact_ambiguous`. The initial `b9c1d2e`
+outer report reduced that to `artifact_missing`; the subsequent v2 reporting
+correction preserves the original scoped ambiguity instead. Both actual initial
+reports were `incomplete/current/clear`, exit 2, independently of the empty
+qualification registry. Those original reports remain retained under
+`work/public-reference-inspection-{replacement,precreation}-linux-b9c1d2e-01/`.
 
 Native engine regression and its explicit two-case expectation correction are
 recorded in [ENGINE-REGRESSION.md](../ENGINE-REGRESSION.md). They preserve the

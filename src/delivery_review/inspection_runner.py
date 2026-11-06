@@ -141,8 +141,10 @@ def _execution_basis(plan):
     if set(plan) == legacy:
         basis = "legacy_pr_field_v1"
     else:
-        require(set(plan) == legacy | {"plan_version", "event_source_basis"}
-            and type(plan["plan_version"]) is int and plan["plan_version"] == 2
+        require(type(plan.get("plan_version")) is int and (
+            plan["plan_version"] == 2 and set(plan) == legacy | {"plan_version", "event_source_basis"}
+            or plan["plan_version"] == 3 and set(plan) == legacy | {"plan_version", "event_source_basis", "evidence_selection_basis"}
+            and plan["evidence_selection_basis"] == "scoped_original_refusals_v1")
             and plan["event_source_basis"] == "github_merge_reference_v1", "unsupported_inspection_execution_plan")
         basis = plan["event_source_basis"]
     require(type(plan["engine_names"]) is list and all(type(name) is str for name in plan["engine_names"])
@@ -152,11 +154,12 @@ def _execution_basis(plan):
 
 
 def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, writer=None, replay=False,
-                 event_source_basis="legacy_pr_field_v1"):
+                 event_source_basis="legacy_pr_field_v1", evidence_selection_basis="legacy_missing_v1"):
     from .evidence.artifacts import parse_artifact_capture, map_artifact_capture, rejected_archive_for_binding
     profile = load_inspection_profile(profile_bytes)
     inputs, audit = {}, {}
     require(event_source_basis in {"legacy_pr_field_v1", "github_merge_reference_v1"}, "unsupported_event_source_basis")
+    require(evidence_selection_basis in {"legacy_missing_v1", "scoped_original_refusals_v1"}, "unsupported_evidence_selection_basis")
     reference = _saved_fact(raw, "event-source/reference") if event_source_basis == "github_merge_reference_v1" else None
     event = EventSourceFact(raw["event-source/commit.bin"], reference=reference) if "event-source/commit.bin" in raw else None
     gh_digest = _sha(_read(tools.gh_executable, 128 * 1024 * 1024))
@@ -169,6 +172,7 @@ def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, write
         key, identity = _test_key(requirement["id"]), requirement["id"]
         prefix = "artifacts/" + key
         artifact, metadata, bundles, complete = None, None, (), False
+        artifact_capture = None
         if prefix + "/capture.json" in raw:
             artifact_capture = parse_artifact_capture(raw[prefix + "/capture.json"],
                 {name[len(prefix) + 1:]: data for name, data in raw.items() if name.startswith(prefix + "/raw/")})
@@ -190,7 +194,10 @@ def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, write
             if qualification is None or saved_receipt != qualification.qualification_receipt_bytes:
                 qualification = None
         values = TestEvidenceInputs(archive_bytes=artifact, artifact_metadata=metadata, producer_repository=producer,
-            event_source=event, event_source_basis=event_source_basis, qualification=qualification)
+            event_source=event, event_source_basis=event_source_basis, qualification=qualification,
+            evidence_selection_basis=evidence_selection_basis,
+            artifact_capture=artifact_capture if profile["profile_version"] == 2 and artifact is None
+                and evidence_selection_basis == "scoped_original_refusals_v1" else None)
         preflight = bind_test_evidence(profile_bytes=profile_bytes, capture=capture, snapshot=snapshot,
             requirement_id=identity, **{field.name: getattr(values, field.name) for field in fields(values)})
         expected = preflight.diagnostics["attestation_expected"]
@@ -370,7 +377,7 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
                 for name, data in acquired.raw_files.items():
                     _keep(writer, raw, prefix + "/" + name, data)
             stages["test_inputs"], stages["audit"] = _test_inputs(profile_bytes, initial, snapshot, raw, tools, runtime,
-                event_source_basis="github_merge_reference_v1")
+                event_source_basis="github_merge_reference_v1", evidence_selection_basis="scoped_original_refusals_v1")
         stages["errors"] = []
         capture = collect_observations(pr_url, canonical_bytes(profile["github"]) + b"\n", writer.root / "raw/github",
             transport=platform_transport, collector=collector, clock=clock, before_recheck=stage)
@@ -384,11 +391,12 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
                 "raw_capture_retained": True, "ready_for_review": False}) + b"\n")
             raise ValueError("inspection_source_unavailable")
         _keep(writer, raw, "execution-plan.json", canonical_bytes({"engine_names": sorted(executions),
-            "stage_errors": sorted(stages["errors"]), "pr_url": pr_url, "plan_version": 2,
-            "event_source_basis": "github_merge_reference_v1"}) + b"\n")
+            "stage_errors": sorted(stages["errors"]), "pr_url": pr_url, "plan_version": 3,
+            "event_source_basis": "github_merge_reference_v1", "evidence_selection_basis": "scoped_original_refusals_v1"}) + b"\n")
         report_id = "inspection-" + _sha(capture.manifest_bytes)[:40]
         composition = compose_report(profile_bytes=profile_bytes, capture=capture, snapshot=stages["snapshot"],
-            engine_executions=executions, test_inputs=stages.get("test_inputs", {}), report_id=report_id, mode="live")
+            engine_executions=executions, test_inputs=stages.get("test_inputs", {}), report_id=report_id, mode="live",
+            evidence_selection_basis="scoped_original_refusals_v1")
         return _publish(writer, composition, raw, collector=collector, audit=stages.get("audit"))
 
 
@@ -421,8 +429,10 @@ def replay_inspection(source, destination, *, tools: InspectionTools):
                     "invalid_saved_engine_streams")
             streams = {key: raw[prefix + "/" + key + ".bin"] for key in manifest["streams"]}
             executions[name] = EngineExecution(runtime, manifest_bytes, MappingProxyType(streams), b"{}")
-        inputs, audit = _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, replay=True, event_source_basis=basis)
+        inputs, audit = _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, replay=True, event_source_basis=basis,
+            evidence_selection_basis=plan.get("evidence_selection_basis", "legacy_missing_v1"))
         composition = compose_report(profile_bytes=profile_bytes, capture=capture, snapshot=snapshot,
-            engine_executions=executions, test_inputs=inputs, report_id=saved.manifest["report_id"], mode="offline_replay")
+            engine_executions=executions, test_inputs=inputs, report_id=saved.manifest["report_id"], mode="offline_replay",
+            evidence_selection_basis=plan.get("evidence_selection_basis", "legacy_missing_v1"))
         return _publish(writer, composition, raw, collector=saved.manifest["collector"], audit=audit,
                         derived_from=_sha(saved.manifest_bytes))

@@ -1,9 +1,9 @@
 # SPEC-006 â€” isolated pytest producer execution
 
-Status: **local Linux execution and hosted workflow candidate implemented; hosted qualification pending**.
+Status: **fixed `3d3e545` head/merge workflows qualified after actual hosted controls and independent review**.
 This implements the test/signer separation required by
-[SPEC-004](SPEC-004-artifact-provenance.md). It is not a producer authentication
-claim, a published reusable workflow, or E01â€“E18 product acceptance. The verifier
+[SPEC-004](SPEC-004-artifact-provenance.md). Implementation and publication alone
+do not establish producer qualification or E01-E18 product acceptance. The verifier
 never invokes this producer against a reviewed project. Only an explicitly
 selected, approved producer workflow may execute project tests in the guest.
 
@@ -237,11 +237,9 @@ to the host console. Focused unit controls additionally cover TAR checksums,
 truncation, extra members, unsafe paths, hard links, special files, output caps,
 credential environment stripping and receipt source/exit/count preservation.
 
-These observations qualify only the recorded local development slice. Hosted
-runner configuration, pinned reusable-workflow publication, OIDC identity
-capture outside the guest, real artifact upload ID/digest, approved attestation
-emission and independent end-to-end verification remain pending. No workflow or
-attestation has been published by this work.
+These observations cover only the recorded local development slice. Subsequent
+public workflow, artifact and attestation observations are recorded separately
+below; the local records do not substitute for those hosted controls.
 
 
 ## Hosted reusable workflow candidate
@@ -361,5 +359,48 @@ are refused before comparing the approved SHA. Focused controls for these
 cases pass on both local platforms. The fixed static Docker client also built
 the trusted one-file context successfully through the production driver's
 minimal environment without an installed buildx plugin; raw observations are
-in `work/producer-qualification/host-build-1793944680905740552`. The actual
-GitHub-hosted daemon/backend remains part of the pending hosted qualification.
+in `work/producer-qualification/host-build-1793944680905740552`. That local
+legacy-build result did not establish compatibility with the hosted Buildx backend.
+
+## Actual public hosted controls at 3d3e545
+
+Exact producer revision `3d3e54599066c98f52384c66953b130a01eaaff8` was exercised
+in the public first-party
+[reference repository](https://github.com/taipei49314/delivery-review-reference).
+Each control uses a separate immutable base/head pair; earlier failures remain
+unchanged. Its build uses a separate Docker configuration directory because an
+actual reproduction showed that successful Buildx 0.38.1 builds leave state
+there. The execution directory is newly created and must still pass the
+unchanged empty-configuration gate.
+
+| Public control | Actual observation |
+| --- | --- |
+| [PR4 head](https://github.com/taipei49314/delivery-review-reference/pull/4), [PR8 merge](https://github.com/taipei49314/delivery-review-reference/pull/8) | Native pytest 0, actual upload binding and custom signing succeeded. Merge retains its distinct checkout SHA and ordered base/head parents. |
+| [PR5 zero](https://github.com/taipei49314/delivery-review-reference/pull/5), [PR6 all skipped](https://github.com/taipei49314/delivery-review-reference/pull/6), [PR7 failure](https://github.com/taipei49314/delivery-review-reference/pull/7) | Signed original measurements retain native exits 5, 0 and 1 and their original counts. Zero/failure jobs finish failed after preserving evidence. |
+| [PR9 collection error](https://github.com/taipei49314/delivery-review-reference/pull/9), [PR10 partial skip](https://github.com/taipei49314/delivery-review-reference/pull/10) | Genuine collection-error XML retains exit 2; partial skip retains one passing and one skipped case with exit 0. Tests are identical in each base/head pair. |
+| [PR11 head boundary](https://github.com/taipei49314/delivery-review-reference/pull/11), [PR12 merge boundary](https://github.com/taipei49314/delivery-review-reference/pull/12) | Signed passing assertions exercise UID, exact runtime, seccomp syscall denial, capabilities, cgroups/tmpfs, read-only mounts, absent host credentials/files/socket and blocked external networking. |
+| [PR14 symlink](https://github.com/taipei49314/delivery-review-reference/pull/14), [PR15 abrupt exit](https://github.com/taipei49314/delivery-review-reference/pull/15), [PR16 output cap](https://github.com/taipei49314/delivery-review-reference/pull/16), [PR17 timeout](https://github.com/taipei49314/delivery-review-reference/pull/17) | Each reached isolated execution and then receipt refusal; complete artifact inventories contain no upload. Timeout took approximately 125 seconds through the fixed 120-second test deadline and cleanup. |
+| [PR18 tmpfs exhaustion](https://github.com/taipei49314/delivery-review-reference/pull/18) | The kernel returned ENOSPC; the authored test removed its files and produced a signed passing boundary observation. |
+| [PR26 forged output/background writer](https://github.com/taipei49314/delivery-review-reference/pull/26) | Native 0 and one signed passing case. Forged workflow-command, fake upload/private-receipt and delayed-writer markers are absent from the Actions log and uploaded members. Earlier PR13 stopped at source acquisition before this test ran. |
+| [PR19 artifact replacement](https://github.com/taipei49314/delivery-review-reference/pull/19) | A separate caller job preserved and downloaded original evidence before deleting only its own new run's artifact. Reupload produced the same name and exact ZIP bytes with a new artifact ID. |
+| [PR20 artifact precreation](https://github.com/taipei49314/delivery-review-reference/pull/20) | Original inventories retain caller-created and producer-created artifacts under the same name with different IDs. The immediate caller metadata read returned 404 and remains recorded. The later producer upload succeeded: overwrite:false did not establish cross-job name uniqueness. |
+
+The lifecycle controls leave PR4/PR8 positive artifacts untouched. A name or
+matching ZIP digest cannot replace authenticated artifact ID and unambiguous
+platform association; a new ID must not inherit an old signed predicate.
+
+Original APIs, safe transport metadata, logs, ZIP/member bytes and signed
+bundles are retained under `work/hosted-reference/run-<id>/`. The consolidated
+mapping is `work/hosted-reference/3d3e545-controls-summary.json`; authoring and
+publication receipts are under `work/reference-authoring-3d3e545*`. Independent
+official-CLI verification, wrong-identity controls and blocked-network replay
+are separate dossier records. Controlled binding checks are not hosted attacks.
+
+Closed hosted refusal logs do not expose runner-local execution details.
+Hosted stop/cleanup and GID checks are enforced by the reviewed fixed producer
+before signing; no separate retained hosted post-cleanup Docker inspection is
+claimed. Direct local stop/cleanup observations remain labeled local. Independent
+review of the complete dossier admitted only the two exact fixed paths at this
+revision. The [digest-bound receipts and original public archive](../../qualification/README.md)
+retain the review scope and failures. Fresh complete-product acceptance and
+stable-release qualification remain separate.

@@ -6,8 +6,13 @@ The first two hosted attempts are preserved as actual failures before artifact
 upload or signing: [run 42177088855](https://github.com/taipei49314/delivery-review-reference/actions/runs/42177088855)
 and [run 42178476087](https://github.com/taipei49314/delivery-review-reference/actions/runs/42178476087).
 Their original base/PR pairs remain unchanged; later attempts use new pairs and
-separate evidence records. Hosted producer qualification and E01–E18 remain
-pending. Neither the fixture files nor these failed runs establish a PASS.
+separate evidence records. Fixed revision `3d3e54599066c98f52384c66953b130a01eaaff8`
+has since produced authentic signed head/merge evidence and actual failure,
+skip, isolation and artifact-lifecycle controls; see the
+[recorded hosted controls](../../docs/specs/SPEC-006-producer-execution.md#actual-public-hosted-controls-at-3d3e545).
+The two fixed paths now have [reviewed qualification](../../qualification/README.md);
+E01–E18 complete-product acceptance remains pending. Fixture files or
+individual successful Actions runs do not establish product acceptance.
 Do not use another project's PR as a destructive test target.
 
 The initial producer supports same-repository GitHub.com `pull_request`, Linux
@@ -103,7 +108,7 @@ agree with independently observed platform records.
 Only an actually passing producer qualification may be reviewed into the
 release-bundled producer registry. Its receipt must identify source revision,
 profile `pytest-isolated-container-v1`, literal `tests`, permitted source modes,
-actual platform and immutable supporting evidence. An empty registry deliberately
+actual platform and immutable supporting evidence. Missing registry approval
 leaves test evidence unqualified even when a signature verifies. Do not add an
 entry merely to make E01 green. This producer qualification is separate from
 the complete product E01 report, so the gate is not circular.

@@ -161,7 +161,7 @@ retains original verdicts, findings and coverage. It does not read `report.json`
 as evidence and does not trust a saved adapter-success field.
 
 [ADR-004](../amendments/ADR-004-github-merge-reference.md) versions event-source
-interpretation inside this unchanged outer envelope. New plans contain exactly
+interpretation inside this unchanged outer envelope. Version 2 plans contain exactly
 `engine_names`, `stage_errors`, `pr_url`, `plan_version: 2` and
 `event_source_basis: github_merge_reference_v1`. Original reference request facts
 and body bytes are saved under `raw/event-source/reference/request.json` and
@@ -176,6 +176,27 @@ old readers reject the new five-key shape. Replay never fetches a current ref or
 changes the saved basis. Refresh makes a new observation and explicit plan, while
 retaining the originally approved inspection profile and leaving the old envelope
 untouched. No original PR JSON is augmented to resemble an older API response.
+
+[ADR-005](../amendments/ADR-005-artifact-ambiguity.md) adds plan version 3 with
+the same event-source basis and one additional exact field,
+`evidence_selection_basis: scoped_original_refusals_v1`. New live observations
+use this six-key plan. It lets profile v2 retain an independently established
+artifact-name ambiguity and a scoped two-parent source contradiction in the
+outer report. A complete fixed PR merge ref and matching canonical Git object
+with two wrong ordered parents yield mismatch/block; fewer parents leave
+untrusted missing proof and more than two leave unsupported source. Raw bytes
+remain retained, and unknown receipt source modes remain schema-refused.
+Historical three-key and version 2 plans retain their prior artifact/source
+interpretation, including saved v2 profiles. The binder's explicit evidence
+selection basis defaults to `legacy_missing_v1`; unknown fields, versions or
+selection bases are rejected.
+
+The same profile-v2/plan3 basis classifies a fully validated exact receipt-only
+ZIP as `missing` / `junit_missing`. This bounded absence check reuses strict
+archive validation and validates the receipt schema, but never accepts a partial
+artifact or constructs signature expectations. Other inventory mismatches and
+unsafe/corrupt archives remain errors. No acquired archive still means
+`artifact_missing`; legacy plans keep their prior inventory-mismatch error.
 
 ## Replay audit and qualification
 
@@ -204,9 +225,11 @@ nor a receipt inside the reviewed artifact adds a qualified producer.
 Replay requires the exact originally retained qualification receipt still to be
 approved by the current verifier. Newly available approval cannot silently upgrade
 an old unqualified inspection; removed approval remains an explicit trust gap.
-Use refresh for a new observation/approval claim. The development registry is
-empty until corresponding real hosted qualification evidence is reviewed and
-published.
+Use refresh for a new observation/approval claim. The development registry now
+admits the separately reviewed head/merge workflow paths at fixed `3d3e545`;
+their digest-bound original public evidence and limits are published in
+[qualification/README.md](../../qualification/README.md). This admission does
+not establish complete-product or stable-release qualification.
 
 ## Evidence classification
 

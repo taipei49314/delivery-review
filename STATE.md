@@ -15,7 +15,7 @@ Observed development results, exact sources and retained failures:
 | Engine wheel SHA-256, METADATA and RECORD verification | Completed for three candidates; see ENGINE-LOCK.md. |
 | Local M0 validation on Windows / Python 3.12 | PASS: 51 tests, 40 synthetic cases and 20 frozen files; see M0-VALIDATION.md. |
 | EC pool Windows / Python 3.12 CI | `m0-contracts` is the configured route; execution results are the per-commit `ec / m0-contracts` check and EC receipt. |
-| Linux CI | No qualified Linux pool lane. Clean native local Linux / official Python 3.11.16 passed all 552 tests, build and installed-package checks at `3d3e545`; this is separate from hosted product acceptance. |
+| Linux CI | No qualified Linux pool lane. Clean native local Linux / official Python 3.11.16 passed all 605 tests, build and installed-package checks at `b9c1d2e`; exact-source Windows pool also passed 605 tests. These are separate from hosted product acceptance. |
 | Installed engine CLI/JSON adapters | Bounded static execution and native adapters implemented; real pinned CLI probes on Windows/Python 3.12 and Linux/Python 3.11. Full product qualification remains separate. See SPEC-003. |
 | Local evidence bundle and offline replay | Implemented for saved normalized observations; see EVIDENCE-BUNDLES.md. No provider mapping or producer authentication. |
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
@@ -29,7 +29,7 @@ Observed development results, exact sources and retained failures:
 | Profile v2 acceptance semantics | Explicit matrix/runtime proof, original policy-proposal comparison, declared ledger inputs and frozen negative dispositions implemented with raw controls. Profile v1 replay remains historical. See SPEC-010. |
 | Safe static source materialization | Bounded public/authenticated acquisition, exact object validation and offline restoration implemented; real public/private fetch feasibility passed both platforms. Full product source qualification pending. See SPEC-005. |
 | Artifact transport | Bounded metadata/ZIP/attestation acquisition, exact raw capture and versioned replay implemented. Signed locators are explicitly omitted; original archives and compressed bundles remain. See SPEC-007. |
-| Qualified producer workflow and pytest/JUnit parser | Actual hosted head/merge signing and installed cryptographic verification passed at producer `3d3e545`; zero/all-skipped/failure runs retained. Registry remains empty pending boundary/replacement qualification. See SPEC-004, SPEC-006 and SPEC-008. |
+| Qualified producer workflow and pytest/JUnit parser | Fixed head/merge paths at `3d3e545` admitted after review of 18 actual hosted controls, offline cryptography and artifact attacks. Digest-bound original public evidence and two registry receipts are in qualification/README.md. Full product acceptance remains separate. |
 | Product JSON/Markdown/HTML reports | Full composer, inspection CLI and original-evidence envelope implemented with authored controls on both platforms. Saved normalized and observation-only formats remain distinct. See SPEC-009. |
 | E01–E18 product integration | NOT_RUN. |
 

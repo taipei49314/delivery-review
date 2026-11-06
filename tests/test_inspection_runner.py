@@ -70,7 +70,7 @@ class InspectionRunnerTests(unittest.TestCase):
 
     def live(self, name="live", *, qualified=True, malformed_zip=False, source_error=False,
              crypto_fail=False, crypto_unavailable=False, reference_error=False, event_error=False,
-             archive_digest_mismatch=False):
+             archive_digest_mismatch=False, ambiguous_artifacts=False):
         scripted = ScriptedTransport(self.capture)
         fixture, events, owner = self.fixture, self.events, self
         class Platform:
@@ -91,6 +91,8 @@ class InspectionRunnerTests(unittest.TestCase):
         if archive_digest_mismatch:
             metadata["digest"] = "sha256:" + "0" * 64
         artifacts = ArtifactTransport([response({"total_count": 1, "artifacts": [metadata]}), response(metadata), response(archive)])
+        if ambiguous_artifacts:
+            artifacts = ArtifactTransport([response({"total_count": 2, "artifacts": [metadata, dict(metadata, id=7002)]})])
         proofs = AttestationTransport([discovery((self.proof.raw_files["bundle"],))])
         def source(*args, **kwargs):
             events.append("source")
@@ -157,7 +159,8 @@ class InspectionRunnerTests(unittest.TestCase):
         self.assertLess(self.events.index("crypto"), self.events.index("final_recheck"))
         before = verify_inspection(self.root / "live")
         plan = loads_strict(before.files["raw/execution-plan.json"])
-        self.assertEqual(2, plan["plan_version"])
+        self.assertEqual(3, plan["plan_version"])
+        self.assertEqual("scoped_original_refusals_v1", plan["evidence_selection_basis"])
         self.assertEqual("github_merge_reference_v1", plan["event_source_basis"])
         self.assertEqual(response(self.reference_payload)["response"]["body"], before.files["raw/event-source/reference/body.bin"])
         for row in self.capture.manifest["records"]:
@@ -198,12 +201,18 @@ class InspectionRunnerTests(unittest.TestCase):
         self.assertEqual("legacy_pr_field_v1", runner._execution_basis(legacy))
         current = dict(legacy, plan_version=2, event_source_basis="github_merge_reference_v1")
         self.assertEqual("github_merge_reference_v1", runner._execution_basis(current))
+        explicit = dict(current, plan_version=3, evidence_selection_basis="scoped_original_refusals_v1")
+        self.assertEqual("github_merge_reference_v1", runner._execution_basis(explicit))
         for change in ({"plan_version": 3}, {"plan_version": True}, {"event_source_basis": "legacy_pr_field_v1"},
                        {"event_source_basis": None}, {"future": True}):
             with self.subTest(change=change), self.assertRaises(ContractError):
                 runner._execution_basis(dict(current, **change))
         with self.assertRaises(ContractError):
             runner._execution_basis(dict(legacy, event_source_basis="github_merge_reference_v1"))
+        for change in ({"plan_version": 2}, {"evidence_selection_basis": "legacy_missing_v1"},
+                       {"evidence_selection_basis": None}, {"unexpected": True}):
+            with self.subTest(change=change), self.assertRaises(ContractError):
+                runner._execution_basis(dict(explicit, **change))
 
     def test_v2_live_and_replay_retain_original_archive_contradiction_without_crypto_upgrade(self):
         from delivery_review.inspection_profile import seal_inspection_profile
@@ -223,6 +232,63 @@ class InspectionRunnerTests(unittest.TestCase):
         replay = self.replay("replay-digest")
         self.assertEqual({"evidence": "error", "freshness": "unknown", "policy": "block"}, replay["state"])
         self.assertIn("artifact_digest_mismatch", replay["obligations"][0]["reason_codes"])
+        self.assertNotIn("crypto", self.events)
+        self.assertNotIn("replay_crypto", self.events)
+
+    def test_v2_same_name_artifacts_preserve_identity_ambiguity_on_live_and_replay(self):
+        from delivery_review.inspection_profile import seal_inspection_profile
+        legacy = self.live("legacy-ambiguity", ambiguous_artifacts=True)
+        self.assertEqual("missing", legacy["obligations"][0]["outcome"])
+        self.assertIn("artifact_missing", legacy["obligations"][0]["reason_codes"])
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        live = self.live(ambiguous_artifacts=True)
+        replay = self.replay("replay-ambiguity")
+        for report, freshness in ((live, "current"), (replay, "unknown")):
+            self.assertEqual({"evidence": "incomplete", "freshness": freshness, "policy": "clear"}, report["state"])
+            self.assertEqual("untrusted", report["obligations"][0]["outcome"])
+            self.assertEqual(["artifact_ambiguous"], report["obligations"][0]["reason_codes"])
+            self.assertFalse(report["ready_for_review"])
+        saved = verify_inspection(self.root / "live")
+        prefix = "raw/tests/" + runner._test_key("pytest-linux") + "/artifact-acquisition/"
+        self.assertTrue(any(path.startswith(prefix + "raw/") for path in saved.files))
+        self.assertNotIn("crypto", self.events)
+        self.assertNotIn("replay_crypto", self.events)
+
+    def test_plan3_wrong_original_merge_parents_block_and_plan2_default_stays_historical(self):
+        from delivery_review.inspection_profile import seal_inspection_profile
+        previous_merge = self.merge_sha
+        tree, _ = _commit(self.fixture.objects.objects[self.fixture.snapshot.head_sha].split(b"\0", 1)[1])
+        self.merge_sha = self.fixture.objects.commit(tree,
+            [self.fixture.snapshot.head_sha, self.fixture.snapshot.base_tip_sha])
+        self.reference_payload["object"].update(sha=self.merge_sha,
+            url="https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + self.merge_sha)
+        self.event_snapshot = materialize_snapshot(self.root / "wrong-event-source", repository=self.fixture.snapshot.repository,
+            head_sha=self.merge_sha, base_tip_sha=self.fixture.snapshot.base_tip_sha,
+            objects={key: value for key, value in self.fixture.objects.objects.items() if key != previous_merge},
+            git_executable=shutil.which("git"))
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        live = self.live()
+        replay = self.replay("replay-wrong-parents")
+        for report, freshness in ((live, "current"), (replay, "unknown")):
+            self.assertEqual({"evidence": "incomplete", "freshness": freshness, "policy": "block"}, report["state"])
+            self.assertEqual("mismatch", report["obligations"][0]["outcome"])
+            self.assertIn("merge_parents_mismatch", report["obligations"][0]["reason_codes"])
+            self.assertFalse(report["ready_for_review"])
+        saved = verify_inspection(self.root / "live")
+        raw = {name[4:]: data for name, data in saved.files.items() if name.startswith("raw/")}
+        self.assertEqual(self.fixture.objects.objects[self.merge_sha], raw["event-source/commit.bin"])
+        # This is the default evidence basis used by exact plan2 replay. It is
+        # checked against the same original inputs without rewriting an envelope.
+        values, _ = runner._test_inputs(self.fixture.profile_bytes, self.capture, self.fixture.snapshot,
+            raw, self.tools, self.root, event_source_basis="github_merge_reference_v1")
+        value = values["pytest-linux"]
+        self.assertEqual("legacy_missing_v1", value.evidence_selection_basis)
+        historical = bind_test_evidence(**self.fixture.args(event_source=value.event_source,
+            event_source_basis=value.event_source_basis, evidence_selection_basis=value.evidence_selection_basis))
+        self.assertEqual(("error", "clear"), (historical.obligation["outcome"], historical.obligation["effect"]))
+        self.assertNotIn("merge_parents_mismatch", historical.obligation["reason_codes"])
         self.assertNotIn("crypto", self.events)
         self.assertNotIn("replay_crypto", self.events)
 

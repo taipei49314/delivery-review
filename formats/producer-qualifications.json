@@ -1,5 +1,1 @@
-{
-  "kind": "delivery-review-qualified-producers",
-  "registry_version": 1,
-  "producers": []
-}
+{"kind":"delivery-review-qualified-producers","producers":[{"receipt":"producer-qualification-c143b95f6bb9a08910458dc3e54739bdeb2ee916ca3a9054a5ba22c22684cc29.json","sha256":"c143b95f6bb9a08910458dc3e54739bdeb2ee916ca3a9054a5ba22c22684cc29"},{"receipt":"producer-qualification-882617bde92a3bd7224b7312cb161b3645be36b64aa07f03e2d7ec065ffab6fc.json","sha256":"882617bde92a3bd7224b7312cb161b3645be36b64aa07f03e2d7ec065ffab6fc"}],"registry_version":1}

@@ -68,6 +68,8 @@ class TestEvidenceInputs:
     event_source: EventSourceFact | None = None
     qualification: ProducerQualification | None = None
     event_source_basis: str = "legacy_pr_field_v1"
+    artifact_capture: object | None = None
+    evidence_selection_basis: str = "legacy_missing_v1"
 
 
 @dataclass(frozen=True)
@@ -256,8 +258,15 @@ def _event_source_basis(value):
             "event_source_basis_unsupported")
 
 
-def event_source_identity(event_source, snapshot, pr, *, event_source_basis="legacy_pr_field_v1"):
+def _evidence_selection_basis(value):
+    require(type(value) is str and value in {"legacy_missing_v1", "scoped_original_refusals_v1"},
+            "unsupported_evidence_selection_basis")
+
+
+def event_source_identity(event_source, snapshot, pr, *, event_source_basis="legacy_pr_field_v1",
+        evidence_selection_basis="legacy_missing_v1"):
     _event_source_basis(event_source_basis)
+    _evidence_selection_basis(evidence_selection_basis)
     if event_source_basis == "github_merge_reference_v1":
         require(type(event_source) is EventSourceFact and type(event_source.reference) is RawApiFact,
                 "event_merge_reference_missing")
@@ -275,6 +284,12 @@ def event_source_identity(event_source, snapshot, pr, *, event_source_basis="leg
         require(type(pr) is dict, "event_merge_reference_scope_invalid")
         reference_sha = merge_reference_identity(event_source.reference, snapshot.repository, pr.get("number"))
         require(sha == reference_sha, "event_merge_reference_sha_mismatch")
+        if evidence_selection_basis == "scoped_original_refusals_v1":
+            # Only a canonical object bound to the exact original PR merge ref
+            # can distinguish missing parent proof, unsupported merge shape and
+            # a known contradiction between two observed ordered parents.
+            require(len(parents) >= 2, "event_merge_parent_proof_missing")
+            require(len(parents) == 2, "event_merge_source_unsupported")
         require(list(parents) == [snapshot.base_tip_sha, snapshot.head_sha], "event_merge_parent_mismatch")
         return sha, list(parents)
     # Only historical callers without a separate merge reference may use the
@@ -377,7 +392,8 @@ def _attestation_execution(execution, expected, archive):
 
 def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         artifact=None, archive_bytes=None, artifact_metadata=None, producer_repository=None, attestation=None,
-        attestation_retention=None, event_source=None, qualification=None, event_source_basis="legacy_pr_field_v1"):
+        attestation_retention=None, event_source=None, qualification=None, event_source_basis="legacy_pr_field_v1",
+        artifact_capture=None, evidence_selection_basis="legacy_missing_v1"):
     """Derive one test obligation; missing/untrusted observations stay explicit.
 
     ``diagnostics.attestation_expected`` is available before cryptographic
@@ -385,6 +401,7 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
     that expectation, then call again with its actual AttestationExecution.
     """
     _event_source_basis(event_source_basis)
+    _evidence_selection_basis(evidence_selection_basis)
     profile, capture, observations = validated_context(profile_bytes, capture, snapshot)
     require(artifact is None or archive_bytes is None, "ambiguous_artifact_input")
     requirements = [row for row in profile["policy"]["requirements"] if row["id"] == requirement_id and row["kind"] == "test_report"]
@@ -416,6 +433,7 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         for name, raw in retained_attestation.raw_files.items():
             retain("attestation/" + name + ".bin", raw)
     decision_v2 = profile["profile_version"] == 2
+    scoped_refusals = decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1"
     workflow, job, initial_outcome, reasons = selected_job(observations, requirement, capture, profile)
     problems.extend((initial_outcome, reason) for reason in reasons)
     if workflow is not None:
@@ -435,7 +453,26 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             and job["conclusion"] in ({"failure", "timed_out"} if decision_v2 else {"failure"}))
             or decision_v2 and "check_app_mismatch" in reasons) else "clear"
     if artifact is None and archive_bytes is None:
-        problems.append(("pending" if evidence["status"] == "pending" else "missing", "artifact_missing"))
+        refusal = None
+        if scoped_refusals and artifact_capture is not None and initial_outcome is None:
+            from .evidence.artifacts import ArtifactCapture, parse_artifact_capture, map_artifact_capture
+            require(type(artifact_capture) is ArtifactCapture, "invalid_test_artifact_capture")
+            acquisition = parse_artifact_capture(artifact_capture.manifest_bytes, artifact_capture.raw_files)
+            expected = {"repository": {"id": policy["repository_id"], "full_name": snapshot.repository},
+                "run_id": evidence["run_id"], "run_attempt": evidence["attempt"], "check_run_id": job["check"]["id"]}
+            require(_strict_equal(acquisition.manifest["inputs"], expected), "artifact_capture_execution_mismatch")
+            observed = map_artifact_capture(acquisition)
+            # A complete original inventory with multiple matching names is an
+            # identity ambiguity. It is not ordinary absence, and no candidate
+            # may be selected by its order, upload time or apparent contents.
+            if observed["status"] == "ambiguous" and observed["reason_codes"] == ["artifact_ambiguous"]:
+                refusal = ("untrusted", "artifact_ambiguous")
+                retain("artifact-acquisition/capture.json", acquisition.manifest_bytes)
+                for name, data in acquisition.raw_files.items():
+                    retain("artifact-acquisition/" + name, data)
+                diagnostics["artifact_acquisition"] = {"status": "ambiguous", "reason_codes": ["artifact_ambiguous"],
+                    "capture_sha256": _sha(acquisition.manifest_bytes)}
+        problems.append(refusal or ("pending" if evidence["status"] == "pending" else "missing", "artifact_missing"))
     else:
         try:
             if archive_bytes is None:
@@ -456,7 +493,22 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                     evidence.update(artifact_id=scoped_id, artifact_sha256=_sha(archive_bytes))
                     require(scoped_meta["digest"] == "sha256:" + evidence["artifact_sha256"]
                             and scoped_meta["size_in_bytes"] == len(archive_bytes), "artifact_transport_digest_mismatch")
-            artifact = read_artifact_zip(archive_bytes, policy_limits=policy["limits"])
+            try:
+                artifact = read_artifact_zip(archive_bytes, policy_limits=policy["limits"])
+            except ContractError as exc:
+                if not scoped_refusals or str(exc) != "zip_member_inventory_mismatch":
+                    raise
+                # A separate complete validation of the exact singleton dialect
+                # can establish absence only. The strict parser still checks all
+                # paths/types, local headers, physical layout, expansion and CRC.
+                # Extra, duplicate, linked, damaged or oversized members never
+                # become a partial accepted artifact or a missing-JUnit claim.
+                partial = read_artifact_zip(archive_bytes, policy_limits=policy["limits"], expected_paths=("receipt.json",))
+                retain("receipt.json", partial.files["receipt.json"])
+                validate_receipt(loads_strict(partial.files["receipt.json"]))
+                diagnostics["artifact_inventory"] = {"validated_members": ["receipt.json"],
+                    "missing_members": ["junit.xml"], "archive_sha256": partial.archive_sha256}
+                raise ContractError("junit_missing")
             receipt_raw, junit_raw = artifact.files["receipt.json"], artifact.files["junit.xml"]
             retain("receipt.json", receipt_raw)
             retain("junit.xml", junit_raw)
@@ -479,7 +531,8 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                                  {key: observations["subject"][key] for key in ("repository_id", "head_repository_id", "pr_number")}),
                     "receipt_subject_identity_mismatch")
             _, pr = capture_payload(capture, "pull_request")
-            cert_sha, parents = event_source_identity(event_source, snapshot, pr, event_source_basis=event_source_basis)
+            cert_sha, parents = event_source_identity(event_source, snapshot, pr, event_source_basis=event_source_basis,
+                evidence_selection_basis=evidence_selection_basis if scoped_refusals else "legacy_missing_v1")
             source = receipt["source"]
             expected_source = {"mode": source["mode"], "head_sha": snapshot.head_sha, "base_tip_sha": snapshot.base_tip_sha,
                 "checked_out_sha": snapshot.head_sha if source["mode"] == "pr_head" else cert_sha,
@@ -617,6 +670,19 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                     problems.append((category, reason))
                     if disposition_effect == "block":
                         effect = "block"
+            if scoped_refusals and event_source_basis == "github_merge_reference_v1":
+                disposition = {
+                    "event_merge_parent_mismatch": ("mismatch", "merge_parents_mismatch", "block"),
+                    "event_merge_parent_proof_missing": ("untrusted", "event_merge_parent_proof_missing", "clear"),
+                    "event_merge_source_unsupported": ("unsupported", "tested_source_mode_unsupported", "clear"),
+                }.get(code)
+                if disposition is not None:
+                    category, reason, disposition_effect = disposition
+                    problems.append((category, reason))
+                    if disposition_effect == "block":
+                        effect = "block"
+            if scoped_refusals and code == "junit_missing":
+                category = "missing"
             problems.append((category, code))
     priority = {"error": 8, "mismatch": 7, "untrusted": 6, "unavailable": 5, "unsupported": 4, "missing": 3, "pending": 2, "failed": 1}
     outcome = max((item[0] for item in problems), key=priority.get, default="satisfied")
