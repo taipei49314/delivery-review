@@ -9,7 +9,7 @@ import sys
 
 from .contracts import ContractError, MAX_JSON_BYTES, loads_strict, require
 from .evidence.inspection import verify_inspection
-from .evidence.store import _read
+from .evidence.store import BundleError, _read
 from .inspection_profile import load_inspection_profile
 from .inspection_runner import InspectionTools, inspect_pr, replay_inspection
 from .provenance import collector_identity
@@ -79,6 +79,10 @@ def main(argv=None, *, identity_provider=None):
         if isinstance(exc, FileExistsError): reason = "output_already_exists"
         elif isinstance(exc, FileNotFoundError): reason = "input_or_parent_not_found"
         elif isinstance(exc, PermissionError): reason = "filesystem_permission_denied"
+        elif args.command in {"verify", "replay", "refresh"} and type(exc) is BundleError and str(exc) == "bundle file digest mismatch":
+            reason = "raw_evidence_digest_mismatch"
+        elif args.command in {"verify", "replay", "refresh"} and type(exc) is BundleError and str(exc) == "bundle file size mismatch":
+            reason = "raw_evidence_size_mismatch"
         elif str(exc) == "collector_source_must_be_clean": reason = "collector_source_must_be_clean"
         elif str(exc) == "inspection_source_unavailable": reason = "source_unavailable_raw_capture_retained"
         else: reason = "invalid_input_or_operation_failed"

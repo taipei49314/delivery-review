@@ -63,6 +63,26 @@ results never acquire that label. These changes do not alter native detectors,
 raw output, accepted schemas or the documented #419 limitation. Legacy plans
 and profile v1 keep their original interpretation.
 
+An actual raw-composer control at `d694175` also exposed a resolved-listing
+edge case. Mapper 2 retained the original `pr_association_unconfirmed` diagnostic
+after independent run/attempt responses had resolved that omission. The specific
+wrong-App classification did not permit this residual reason and returned an
+untrusted gap. Under the new basis, that residual diagnostic is permitted only
+with explicit mapper-2 resolution, matching selected run/attempt details and the
+two original complete successful API records named by that resolution. A known
+numeric App contradiction then retains `mismatch`/`block`; unresolved, conflicting
+or unrelated associations remain gaps. The failed original control is retained.
+
+Closed execution-history aliases also reparse complete original workflow-run
+inventories and scoped run/attempt records. `latest_run_pending` describes the
+independently selected pending execution; `latest_run_failed` is attached only
+to an already failed/block obligation with matching native failure facts.
+Neither implies an older success was observed. `evidence_for_old_head` requires
+retained, complete, same-PR successful history at another head and no selectable
+current-head run. An empty head-filtered listing cannot prove such history.
+These aliases never change selection, outcomes, effects, counts or binding and
+are confined to profile v2 with the new explicit execution basis.
+
 ## Historical dispatch
 
 This correction is selected by an explicit six-key execution plan:

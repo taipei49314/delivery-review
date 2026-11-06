@@ -138,9 +138,32 @@ class GitHubSourceTests(unittest.TestCase):
             with self.subTest(change=change), patch.object(source.Path, "cwd", return_value=quarantine), \
                  patch.object(source.os, "execve", side_effect=AssertionError("must not exec")), self.assertRaises(source.ContractError):
                 source._fetch_worker(source.canonical_bytes({**request, **change}))
-        (quarantine / "config").write_bytes(source._CONFIG + b"[http]\nsslVerify=false\n")
-        with patch.object(source.Path, "cwd", return_value=quarantine), self.assertRaisesRegex(source.SourceAcquisitionError, "invalid_source_worker"):
-            source._fetch_worker(source.canonical_bytes(request))
+        for config in (source._CONFIG + b"[http]\nsslVerify=false\n",
+                       source._CONFIG.replace(b"createObject = rename", b"createObject = link")):
+            with self.subTest(config=config):
+                (quarantine / "config").write_bytes(config)
+                with patch.object(source.Path, "cwd", return_value=quarantine), patch.object(source, "_exec_fetch") as execute, \
+                     self.assertRaisesRegex(source.SourceAcquisitionError, "invalid_source_worker"):
+                    source._fetch_worker(source.canonical_bytes(request))
+                execute.assert_not_called()
+
+    def test_rename_publication_keeps_live_and_stable_external_hardlinks_forbidden(self):
+        self.acquire()
+        quarantine = self.destination / "quarantine"
+        process, streams = self.real_execute(source._argv(Path(self.git), quarantine,
+            ["config", "--get", "core.createObject"]), cwd=quarantine,
+            env=source._environment(Path(self.git), self.destination / "home", quarantine / "tmp"),
+            deadline=time.monotonic() + 10, limits=SimpleNamespace(max_stdout_bytes=1024, max_stderr_bytes=1024))
+        self.assertEqual(("exited", 0), (process["termination"], process["exit_code"]))
+        self.assertEqual(b"rename\n", streams["stdout"])
+        external = self.root / "outside-quarantine"
+        external.write_bytes(b"authored external file must remain untouched")
+        original = external.read_bytes()
+        os.link(external, quarantine / "objects/injected-hardlink")
+        for stable in (False, True):
+            with self.subTest(stable=stable), self.assertRaisesRegex(source.SourceAcquisitionError, "^source_quarantine_link$"):
+                source._quarantine_scan(quarantine, source.SourceFetchLimits(), stable=stable)
+        self.assertEqual(original, external.read_bytes())
 
     def test_raw_basic_and_truncated_credential_echo_is_sanitized_before_any_stream_persistence(self):
         token = "ghs_authored_echo_fixture_1234567890"

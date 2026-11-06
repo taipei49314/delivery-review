@@ -187,7 +187,7 @@ def _fetch_worker_main():
     return 70
 
 
-_CONFIG = (b'[core]\n\trepositoryformatversion = 0\n\tbare = true\n\tfsmonitor = false\n'
+_CONFIG = (b'[core]\n\trepositoryformatversion = 0\n\tbare = true\n\tfsmonitor = false\n\tcreateObject = rename\n'
            b'\thooksPath = disabled-hooks\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n'
            b'[protocol "https"]\n\tallow = always\n[protocol "file"]\n\tallow = never\n'
            b'[http]\n\tfollowRedirects = false\n\tproxy =\n\tsslVerify = true\n\temptyAuth = false\n'

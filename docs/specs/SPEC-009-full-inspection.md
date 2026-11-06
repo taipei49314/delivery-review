@@ -233,6 +233,13 @@ not establish complete-product or stable-release qualification.
 
 ## Evidence classification
 
+The full CLI reports saved-file checksum and size contradictions with closed
+`raw_evidence_digest_mismatch` and `raw_evidence_size_mismatch` diagnostics for
+verify, replay and refresh. They are error envelopes with exit 2, not normalized
+inspection reports or readiness claims. Only the exact internal storage errors
+receive these labels; arbitrary exception messages remain sanitized. Rejected
+saved bytes are never rehashed into a replacement original or used for refresh.
+
 Authored CLI controls exercise immutable refresh inputs, offline delegation,
 ambient-token isolation, strict toolchain parsing, local tamper refusal, truthful
 verification output and sanitized failures. Authored orchestration controls use

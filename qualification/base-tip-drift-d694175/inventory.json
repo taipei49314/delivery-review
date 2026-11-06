@@ -1,0 +1,43 @@
+{
+  "kind": "original-public-base-tip-diagnostic",
+  "repository": "taipei49314/delivery-review-reference",
+  "repository_id": 1447925554,
+  "source": "d694175a475d6cdc109140797935de47652bddef",
+  "files": [
+    {
+      "path": "0.stdout",
+      "size_bytes": 481,
+      "sha256": "56dbcc7a69c74b394a05e446756b6a080be5f8320dd8970b6d074581c1a9e43b"
+    },
+    {
+      "path": "0.stderr",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "1.stdout",
+      "size_bytes": 18376,
+      "sha256": "c6902ef0894df34781a431255a10bd0d3023f53ff66f2a7ff07883be0982f160"
+    },
+    {
+      "path": "1.stderr",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "2.stdout",
+      "size_bytes": 382,
+      "sha256": "483dc31f4a3cb109bf1e9de8c0e58fccf0132a6d2528fdf5142913bba0ac651f"
+    },
+    {
+      "path": "2.stderr",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "result.json",
+      "size_bytes": 1577,
+      "sha256": "8e6b782eb77d12847d8d8af7a10e55e74c8a5ac561e743a508dcf79a049be4f9"
+    }
+  ]
+}

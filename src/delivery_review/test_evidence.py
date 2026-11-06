@@ -155,8 +155,9 @@ def _job_inventory_complete(capture, workflow_id, run_id, attempt):
         return False
 
 
-def selected_job(observations, requirement, capture, profile=None):
+def selected_job(observations, requirement, capture, profile=None, *, evidence_selection_basis="legacy_missing_v1"):
     """Never replace a selected untrusted/pending run with an older success."""
+    _evidence_selection_basis(evidence_selection_basis)
     selector = requirement["selector"]
     decision_v2 = profile is not None and profile["profile_version"] == 2
     selected_name = platform_job_name(profile, requirement) if profile is not None else selector["job_name"]
@@ -175,12 +176,41 @@ def selected_job(observations, requirement, capture, profile=None):
         return workflow, None, "missing" if not candidates else "untrusted", [missing if not candidates else ambiguous]
     job = candidates[0]
     check = job.get("check")
+    allowed_reasons = {"check_app_id_mismatch", "listing_pr_association_resolved"}
+    if decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1":
+        # Mapper 2 retains the listing's original omission even after separate
+        # run and attempt bodies resolve it. Admit that residual reason only
+        # with the exact independently resolved, selected-execution proof.
+        selection = workflow["selection"]
+        listing = selection.get("listing_association", {})
+        details = [workflow.get("run"), workflow.get("attempt")]
+        if (capture.manifest["mapper_version"] == 2 and listing.get("status") == "unconfirmed"
+                and listing.get("resolution") == "resolved"
+                and listing.get("reasons") == ["pr_association_unconfirmed"]
+                and all(type(detail) is dict and detail.get("association") == "matched"
+                    and detail.get("native_state") == "observed" and detail.get("reasons") == []
+                    and detail.get("id") == selection["run_id"]
+                    and detail.get("run_attempt") == selection["attempt"]
+                    and detail.get("run_number") == selection["run_number"]
+                    and detail.get("workflow_id") == workflow["workflow_id"]
+                    and detail.get("head_sha") == observations["subject"]["head_sha"]
+                    for detail in details)):
+            refs = sorted(set(details[0]["raw_refs"] + details[1]["raw_refs"]))
+            records = [row for row in capture.manifest["records"] if row["id"] in refs]
+            if (listing.get("resolved_by") == refs and len(records) == 2
+                    and {row["role"] for row in records} == {"run", "attempt"}
+                    and all(row["phase"] == "initial" and row["workflow_id"] == workflow["workflow_id"]
+                        and row["run_id"] == selection["run_id"] and row["status_code"] == 200
+                        and row["error"] is None and row["body"] is not None and row["body"]["complete"]
+                        and row["attempt"] == (selection["attempt"] if row["role"] == "attempt" else None)
+                        for row in records)):
+                allowed_reasons.add("pr_association_unconfirmed")
     # A specific, independently observed contradiction is different from an
     # unresolved association. Keep all other identity failures untrusted.
     if (decision_v2 and check is not None and positive(check.get("app_id"))
             and check["app_id"] != selector["app_id"]
             and "check_app_id_mismatch" in job["reasons"]
-            and set(workflow["reasons"]) <= {"check_app_id_mismatch", "listing_pr_association_resolved"}):
+            and set(workflow["reasons"]) <= allowed_reasons):
         return workflow, job, "mismatch", ["check_app_mismatch"]
     if (workflow["association"] != "matched" or job["association"] != "matched" or match["status"] != "matched"
             or job.get("check") is None or job["check"].get("app_id") != selector["app_id"]):
@@ -434,7 +464,8 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             retain("attestation/" + name + ".bin", raw)
     decision_v2 = profile["profile_version"] == 2
     scoped_refusals = decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1"
-    workflow, job, initial_outcome, reasons = selected_job(observations, requirement, capture, profile)
+    workflow, job, initial_outcome, reasons = selected_job(observations, requirement, capture, profile,
+        evidence_selection_basis=evidence_selection_basis)
     problems.extend((initial_outcome, reason) for reason in reasons)
     if workflow is not None:
         evidence.update(workflow_id=workflow["workflow_id"], run_id=workflow["selection"].get("run_id"),
@@ -690,6 +721,10 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         outcome = "untrusted"
         problems.append((outcome, "test_binding_unconfirmed"))
     reasons = sorted({item[1] for item in problems})
+    if scoped_refusals:
+        from .execution_history import execution_reason_aliases
+        reasons = sorted(set(reasons) | set(execution_reason_aliases(capture,
+            workflow_id=selector["workflow_id"], outcome=outcome, effect=effect)))
     evidence["messages"] = reasons
     if outcome == "error":
         evidence["status"] = "error"

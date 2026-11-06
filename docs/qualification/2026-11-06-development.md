@@ -22,6 +22,8 @@ inherit an earlier commit's test receipt. Frozen expectations remain unchanged.
 | `3d3e54599066c98f52384c66953b130a01eaaff8` | Clean native Linux / official Python 3.11.16 | 552 tests passed in 21.092 seconds; frozen validator, clean build/install, resources/identity and installed observation replay passed. |
 | `b9c1d2e9ba459882d8b8c94bbe09f7f93f8e9d32` | Clean native Linux / official Python 3.11.16 | 605 tests passed in 36.421 seconds; frozen validator, clean build/install, resources/identity and byte-identical installed observation replay passed. |
 | `b9c1d2e9ba459882d8b8c94bbe09f7f93f8e9d32` | Existing EC Windows / Python 3.12.10 lane | 605 tests, zero failures/errors/skips; 193.437-second test step, 202.890-second workload. Exact-source input digests, frozen validation and source cleanliness passed under unchanged limits. |
+| `d694175a475d6cdc109140797935de47652bddef` | Clean native Linux / official Python 3.11.16 | 635 tests passed in 25.157 seconds; all 24 source/build/install/offline-resource operations passed with a clean checkout. |
+| `d694175a475d6cdc109140797935de47652bddef` | Existing EC Windows / Python 3.12.10 lane | 635 tests, zero failures/errors/skips/xfails; 323.703-second workload under unchanged limits. Exact-source contracts and cleanliness passed. |
 
 The successful native Linux environment was freshly installed with the already
 verified uv 0.12.12, using the official Python build-standalone 3.11.16 release
@@ -57,6 +59,62 @@ The exact-source Windows check is `127786230835`; its private EC receipt is
 retained locally and is not part of the public evidence export.
 
 ## Actual inspect, replay and refresh
+
+The clean installed `d694175` candidate completed the actual qualified head
+chain on [reference PR4](https://github.com/taipei49314/delivery-review-reference/pull/4):
+report `inspection-374f103f6d94f5d330c1b97347311bf93797f458`, observed
+`2026-11-06T08:58:22Z`, was `complete/current/clear`, ready, exit 0. It retained
+11 original API records, exact source and native engine observations, and fresh
+official cryptography bound to the two reviewed producer resources. A separate
+actual merge-mode inspection also passed. These are measured variants, not a
+blanket claim that E01–E18 or stable 1.0 is complete.
+
+Its development wheel is 212,144 bytes with SHA-256
+`4333c7e0acbed630b936961df94ed5cf5f02318f421c339087813c94d2d846c3`;
+sdist is 322,884 bytes with SHA-256
+`2312798265e84f3a65b6d6372c2bc31649c3497f439964ca8dc1b89b79e8fd35`.
+The exact-head Windows check is `127806756084`. Private EC originals remain
+local, outside public qualification evidence.
+
+Two actual disconnected replays of that qualified envelope each ran fresh
+pinned official cryptography, preserved source/qualification/observation time,
+and produced byte-identical JSON/Markdown/HTML with `complete/unknown/clear`,
+exit 2. One-byte saved-file tampering caused verify/replay to refuse before a
+new report existed. A genuine online refresh created
+`inspection-7569c43c9a69f7b4f1d32113f072d1dbea9acf96` at `09:07:32Z`, with
+11 new successful observation requests and `complete/current/clear`, exit 0.
+The original tree stayed unchanged. Receipt
+`work/e17-qualified-envelope-linux-d694175-02/result.json` has SHA-256
+`882bf20a405f393c0ccc3aad0901e9aa67597cb14064d5b5ac17699cc44dbf90`.
+The first E17 controller expected the wrong internal storage diagnostic; its
+failed receipt remains retained separately, before the explicit correction.
+
+Installed-reader compatibility at this same commit also compared three actual
+historical envelopes against their original installed readers: legacy `8bb4337`,
+signed `3d3e545`, and profile-v2/plan2 ambiguous-artifact `b9c1d2e`. All three
+report formats remained byte-identical under blocked networking, with unchanged
+original trees/plans/times. Fresh official signature verification did not upgrade
+the old signed capture's missing retained qualification. Receipt
+`work/plan3-legacy-compatibility-03/result.json` has SHA-256
+`ab6bd51895813b416d787410e136762b61fbb3a6d630de2900e6c79537c4bdb2`.
+
+Controlled original-byte E10/E14/E16 composition matched all 23 preregistered
+variants, with real baseline crypto, unchanged installed package and original
+capture, no network and no qualification override. A separate 19-case original
+API control set matched 18 and exposed the resolved-listing wrong-App defect
+described in ADR-005. The failing source and original report remain retained;
+the implementation correction requires a new exact-source qualification.
+
+Other actual hosted functional, exemption, policy, ledger and known-escape
+variants are recorded under `work/actual-product-controls-d694175-01` and
+`work/actual-policy-ledger-d694175-01`. The extra disallowed-partial-skip
+controller originally expected a block where the contract permits a missing
+obligation with clear policy: its incorrect authored expectation is preserved
+and explicitly amended, without changing frozen cases or product behavior.
+One optional-partial-ledger observation failed to acquire merge-source proof
+with `source_quarantine_link`; its incomplete result is retained. A separate
+fresh attempt with the same profile passed. Twelve diagnostic native fetches did
+not reproduce that refusal, so its exact transient cause is not claimed proven.
 
 An installed `732729d` candidate inspected the owner's real Pinwash PR 81 using
 an external diagnostic policy requiring the new producer, which that PR had not

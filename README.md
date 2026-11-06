@@ -13,10 +13,19 @@ Offline replay reconstructs source and reparses native streams, including fresh
 offline signature verification. The fixed head/merge producer has
 [reviewed hosted qualification](qualification/README.md); full E01–E18 product
 integration and stable-release qualification remain pending.
+An installed development candidate has completed the actual public head/merge
+chain and qualified offline replay/refresh; exact sources, remaining corrections
+and retained failures are in the [qualification record](docs/qualification/2026-11-06-development.md).
 
 The remaining acceptance criteria and implementation order are tracked in
 [RELEASE-1.0.md](docs/RELEASE-1.0.md). Source is licensed under Apache-2.0;
 recorded third-party evidence is not automatically relicensed.
+
+**Known release blocker:** the current freshness check relies on PR API
+`base.sha`, which stayed stale after an actual target-branch update. A `current`
+result cannot yet establish the target branch's current tip in that scenario.
+[The round handoff and original evidence](docs/qualification/2026-11-06-round-closeout.md)
+describe the required independent branch-reference fix and remaining gates.
 
 The open-source implementation direction is now defined by
 [SPEC-001](docs/specs/SPEC-001-github-observations.md) and

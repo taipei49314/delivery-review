@@ -1,0 +1,4 @@
+# Preserve original API and command-output bytes, including CRLF metadata.
+*.stdout -text whitespace=cr-at-eol
+*.stderr -text whitespace=cr-at-eol
+*.json -text whitespace=cr-at-eol

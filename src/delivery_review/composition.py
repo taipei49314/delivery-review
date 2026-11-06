@@ -10,6 +10,7 @@ from types import MappingProxyType
 from .adapters.engines import PINS, normalize_engine_result
 from .contracts import canonical_bytes, canonical_digest, derive_state, exit_for, require, validate_report
 from .engine_runner import EngineExecution
+from .execution_history import execution_reason_aliases
 from .ledger_input import apply_declaration
 from .policy_change import observe_policy_change
 from .providers.github_observations import map_capture
@@ -133,10 +134,11 @@ def _static_obligation(requirement, observed, repository_id, head, *, scoped_ref
     return evidence, obligation_record(requirement, evidence, outcome, reasons, effect)
 
 
-def _ci(requirement, capture, observations, profile=None):
+def _ci(requirement, capture, observations, profile=None, *, evidence_selection_basis="legacy_missing_v1"):
     evidence = evidence_record(requirement, observations["subject"]["repository_id"])
     decision_v2 = profile is not None and profile["profile_version"] == 2
-    workflow, job, outcome, reasons = selected_job(observations, requirement, capture, profile)
+    workflow, job, outcome, reasons = selected_job(observations, requirement, capture, profile,
+        evidence_selection_basis=evidence_selection_basis)
     if workflow is not None:
         evidence.update(workflow_id=workflow["workflow_id"], run_id=workflow["selection"].get("run_id"),
                         attempt=workflow["selection"].get("attempt"))
@@ -163,6 +165,9 @@ def _ci(requirement, capture, observations, profile=None):
             outcome, reasons, effect = "missing", ["required_job_timeout"], "block"
         else:
             outcome, reasons = "missing", ["required_job_" + (job["conclusion"] or "unconfirmed")]
+    if decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1":
+        reasons = sorted(set(reasons) | set(execution_reason_aliases(capture,
+            workflow_id=requirement["selector"]["workflow_id"], outcome=outcome, effect=effect)))
     evidence["messages"] = reasons
     return evidence, obligation_record(requirement, evidence, outcome, reasons, effect)
 
@@ -270,7 +275,8 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                     engine = dict(engine_observations[name]["engine"], evidence_id=item["id"])
                     engines.append(engine)
         elif requirement["kind"] == "ci_job":
-            item, obligation = _ci(requirement, capture, observations, profile)
+            item, obligation = _ci(requirement, capture, observations, profile,
+                evidence_selection_basis=evidence_selection_basis)
             if "matrix" in requirement["selector"] and obligation["outcome"] in {"satisfied", "failed"}:
                 # A native job status proves execution, not the runtime tuple.
                 # Preserve its block while waiting for authenticated test proof.
@@ -318,7 +324,8 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
                         messages=["Source established by " + proof["id"]])
             obligation.update(outcome="satisfied", reason_codes=[])
         else:
-            _, derived = _ci(requirement, capture, observations, profile)
+            _, derived = _ci(requirement, capture, observations, profile,
+                evidence_selection_basis=evidence_selection_basis)
             if "matrix" in requirement["selector"]:
                 item.update(job_name=proof["job_name"], matrix=dict(proof["matrix"]))
                 item["messages"] = [code for code in item["messages"] if code != "matrix_runtime_unconfirmed"]

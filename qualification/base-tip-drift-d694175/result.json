@@ -1,0 +1,53 @@
+[
+  {
+    "argv": [
+      "gh",
+      "api",
+      "--method",
+      "GET",
+      "-H",
+      "X-GitHub-Api-Version: 2026-03-10",
+      "repos/taipei49314/delivery-review-reference/git/ref/heads/qualification/e04-base-3d3-01-base-a"
+    ],
+    "observed_at": "2026-11-06T09:22:30.218671+00:00",
+    "exit_code": 0,
+    "stdout_sha256": "56dbcc7a69c74b394a05e446756b6a080be5f8320dd8970b6d074581c1a9e43b",
+    "object_sha": "3440cbf47713116978e0ccf9e405bf0e0209897f",
+    "pr_base_sha": null,
+    "pr_head_sha": null
+  },
+  {
+    "argv": [
+      "gh",
+      "api",
+      "--method",
+      "GET",
+      "-H",
+      "X-GitHub-Api-Version: 2026-03-10",
+      "repos/taipei49314/delivery-review-reference/pulls/35"
+    ],
+    "observed_at": "2026-11-06T09:22:31.059572+00:00",
+    "exit_code": 0,
+    "stdout_sha256": "c6902ef0894df34781a431255a10bd0d3023f53ff66f2a7ff07883be0982f160",
+    "object_sha": null,
+    "pr_base_sha": "4eb7a97ac7f6ff7c0455232f1744997da36869ac",
+    "pr_head_sha": "6717067189dae19771997446e458356cdede6ddf"
+  },
+  {
+    "argv": [
+      "gh",
+      "api",
+      "--method",
+      "GET",
+      "-H",
+      "X-GitHub-Api-Version: 2026-03-10",
+      "repos/taipei49314/delivery-review-reference/git/ref/pull/35/merge"
+    ],
+    "observed_at": "2026-11-06T09:22:31.617849+00:00",
+    "exit_code": 0,
+    "stdout_sha256": "483dc31f4a3cb109bf1e9de8c0e58fccf0132a6d2528fdf5142913bba0ac651f",
+    "object_sha": "8f4d92520756d39c9c4e840d14669ae8b13ffc12",
+    "pr_base_sha": null,
+    "pr_head_sha": null
+  }
+]
