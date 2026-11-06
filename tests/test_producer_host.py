@@ -112,7 +112,7 @@ class ProducerHostTests(unittest.TestCase):
             proc = Path('/proc') / str(pid) / 'stat'
             try:
                 state = proc.read_text().split()[2]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 # Reaping may remove /proc/PID/stat between lookup and read.
                 # Only actual disappearance is success; a live non-zombie child
                 # still has to terminate before the same bounded deadline.
