@@ -9,3 +9,9 @@ The unmodified Moby container seccomp profile is included under producer/seccomp
 It is from moby/profiles at commit 4b8214fc4971e06172938a1f1554ccff6647ee80,
 licensed under Apache-2.0. Its original license and exact source inventory are
 included in that directory. This inclusion does not imply upstream endorsement.
+
+The bundled public GitHub/Sigstore trusted-root export retains the exact bytes
+obtained with GitHub CLI 2.98.0 on 2026-11-06, encoded as base64 in
+formats/github-trusted-root.json. It contains public certificate and log trust
+material, not private keys. Source, byte digest and trust-bootstrap limits are
+recorded in docs/TOOLCHAIN-PROVENANCE.md. No upstream endorsement is implied.

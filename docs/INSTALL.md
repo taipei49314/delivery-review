@@ -39,6 +39,51 @@ runtime dependency export comes from the source's `uv.lock`. A plain pip install
 also works but resolves transitive dependencies at installation time and is not
 the exact qualification environment.
 
+## Prepare inspection tools
+
+With Git on the operator's PATH, run this command from the installed verifier's
+Python 3.11 or 3.12 environment on Linux amd64 or Windows amd64:
+
+```sh
+delivery-review tools install --out review-tools
+delivery-review inspect https://github.com/OWNER/REPO/pull/NUMBER --policy approved-profile.json --tools review-tools/toolchain.json --out first-review
+delivery-review replay first-review --tools review-tools/toolchain.json --out replay-review
+delivery-review refresh first-review --tools review-tools/toolchain.json --out refreshed-review
+```
+
+`review-tools` must be new and its parent must already exist. Provisioning
+downloads the three fixed Wash wheels and the platform's fixed GitHub CLI
+archive, verifies their exact sizes and SHA-256 values, then writes
+`toolchain.json`. It selects the running Python and the operator's Git. It
+does not install wheels, invoke pip, execute downloaded programs, inspect a PR,
+or use GitHub credentials. Unsupported platforms/Python versions fail before
+downloading. Linux/Python 3.11 remains the initial product qualification target;
+the additional bootstrap platform does not establish product qualification.
+
+The output retains the original GitHub CLI archive, its selected executable,
+download receipt and the bundled public trusted-root export. Downloaded file
+paths are relative to the configuration; Git and Python paths are absolute.
+Move the directory only where those operator runtimes remain available. Each
+inspection independently rechecks its tool hashes. A failed preparation leaves
+no usable configuration; preserve any partial output for diagnosis and choose
+a new output directory when retrying.
+
+Downloads use fixed official HTTPS sources, no environment proxies, a 32 MiB
+per-file hard cap and at most 60 seconds per download within a 180-second
+download budget. Only the GitHub release's single redirect to the exact
+`release-assets.githubusercontent.com` host is followed. The installer reads
+one exact regular archive member without extracting archive paths. The root
+export is fixed offline material: provisioning never silently rotates trust
+roots. Sources, hashes and trust-bootstrap limits are recorded in
+[TOOLCHAIN-PROVENANCE.md](TOOLCHAIN-PROVENANCE.md).
+
+Approve `approved-profile.json` independently of the reviewed PR before using
+it. Installing tools does not approve a policy, qualify a producer, authenticate
+a saved report, or establish a stable release. Full replay freshly runs the
+pinned official offline signature verifier when a saved attestation is present;
+it does not collect new platform facts or run the three scanners. Its current
+freshness remains unknown. See [SPEC-009](specs/SPEC-009-full-inspection.md).
+
 ## Observation commands
 
 The full inspection profile uses a selector-bound policy identity. Its

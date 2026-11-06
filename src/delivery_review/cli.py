@@ -19,6 +19,7 @@ def main(argv=None):
                         add_help=False)
     commands.add_parser("bundle", help="verify / replay saved-normalized evidence bundles", add_help=False)
     commands.add_parser("policy", help="seal / verify a complete inspection profile identity", add_help=False)
+    commands.add_parser("tools", help="install fixed hash-pinned inspection tools", add_help=False)
     # Delegate the full tail so command help/options belong to their own parser.
     if argv and argv[0] in {"inspect", "replay", "refresh", "verify"}:
         from .inspection_cli import main as run
@@ -31,6 +32,9 @@ def main(argv=None):
         return run(argv[1:])
     if argv and argv[0] == "policy":
         from .policy_cli import main as run
+        return run(argv[1:])
+    if argv and argv[0] == "tools":
+        from .toolchain_cli import main as run
         return run(argv[1:])
     parser.parse_args(argv)
     return 2

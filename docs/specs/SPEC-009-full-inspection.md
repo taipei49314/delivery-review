@@ -110,7 +110,11 @@ composed under the unchanged three-axis contract and rendered as JSON, Markdown
 and self-contained HTML.
 
 The collection reserves space for final platform observations before other
-stages consume the outer budget. Per-request/per-format limits remain in force.
+stages consume the outer budget. The complete envelope has a cumulative 512 MiB
+byte limit and 25,000-file limit; artifact collection receives the remaining
+allowance. Request counts, pagination and deadlines are bounded within each
+platform/artifact/source stage, not by one shared HTTP-request counter or one
+whole-inspection deadline. Per-request/per-format limits remain in force.
 One failed engine or unavailable attestation cannot erase another independently
 observed block. If the fundamental subject/source cannot be established, an
 explicit inspection-error record and available raw capture remain; no fictional
@@ -165,7 +169,10 @@ process timing. These new audits are stored separately under `raw/audit/` and
 covered by the full envelope inventory, outside the canonical report's historical
 evidence inventory. The binder retains the original audit only after checking
 its raw inventory and matching artifact/bundle/trust-root/expectation bytes
-against the fresh execution. Decisions use the fresh verifier result. The entire
+against the fresh execution. Both the original successful claim chain and the
+fresh verifier result are required. A later successful verification cannot
+upgrade an originally failed or unavailable verification; refresh creates a new
+observation when new proof is available. The entire
 new envelope, including its fresh audit, is not promised to be byte-identical.
 
 Producer approval comes from release-bundled qualification resources. Registry
