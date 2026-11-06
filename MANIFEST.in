@@ -1,0 +1,6 @@
+include pyproject.toml setup.py build_identity.py MANIFEST.in README.md LICENSE NOTICE
+recursive-include schemas *.json
+recursive-include formats *.json
+recursive-include locks *.json
+recursive-include src *.py
+global-exclude *.py[cod]

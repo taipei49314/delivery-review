@@ -1,0 +1,11 @@
+{
+  "git_executable": "/usr/bin/git",
+  "python_executable": "/usr/bin/python3.11",
+  "engine_wheels": {
+    "checkwash": "toolchain/checkwash-0.10.0-py3-none-any.whl",
+    "pinwash": "toolchain/pinwash-0.1.1-py3-none-any.whl",
+    "ledgerwash": "toolchain/ledgerwash-0.5.0-py3-none-any.whl"
+  },
+  "gh_executable": "toolchain/gh",
+  "trusted_root": "toolchain/trusted_root.jsonl"
+}

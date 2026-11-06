@@ -1,9 +1,11 @@
 # Architecture
 
-Status: **M0 contract architecture**. Schemas, synthetic contract fixtures and a
-local validator are the current milestone. The provider, installed-engine
-adapters, producer, parser and report workflow described below are subsequent
-implementation boundaries, not claims that those components already work.
+Status: **implementation toward 1.0 on the frozen M0 contract**.
+Raw GitHub capture/versioned mapping, local replay, pytest parsing, pure engine
+adapters, static source materialization and installable CLI foundations exist.
+The isolated producer, independent artifact proof, complete report composition
+and product qualification remain unfinished. See [release gates](RELEASE-1.0.md)
+and [current state](../STATE.md) for the evidence behind each boundary.
 
 The authoritative semantics are in [CONTRACT.md](CONTRACT.md). Product
 integration evidence is tracked separately in [ACCEPTANCE.md](ACCEPTANCE.md).
@@ -49,10 +51,23 @@ interfaces. The new product owns evidence linkage and policy evaluation.
 | Policy evaluator | Obligation matching, evidence/freshness/policy axes, reasons and readiness. | Requirements from observed green jobs or arbitrary natural-language task intent. |
 | Renderer | Traceable summaries, complete findings, limitations and escaped presentation. | A new decision or a stronger claim than the JSON report. |
 
+The implemented `evidence/store.py` preserves supplied policy/report/raw bytes,
+checks the exact inventory and referenced raw digests, and rejects unsafe or
+unbounded bundles. `evidence/replay.py` recomputes state from saved normalized
+observations under the saved policy. Neither component derives those observations
+from GitHub responses or increases their binding level. See
+[EVIDENCE-BUNDLES.md](EVIDENCE-BUNDLES.md) for this slice's precise format and API.
+
 The evaluator should be deterministic over verified normalized observations and
 the saved policy. Provider and scanner code performs IO; the evaluator does not
 fetch missing data, rerun a test, edit an exemption or change the source snapshot
 to obtain a better outcome.
+
+The full inspection profile binds all acquisition/provenance selectors into the
+existing policy identity under [ADR-003](amendments/ADR-003-inspection-policy-identity.md).
+This is separate from the observation-only profile. Schemas ship in the wheel
+and remain offline; release provenance and package inventories are consistency
+records, not publisher signatures.
 
 ## 3. Reuse boundaries
 
@@ -70,7 +85,7 @@ to obtain a better outcome.
   It is not a runtime database and its historical labels are not new truth labels.
 - **GitHub CLI/API** provides the initial provider interface. The authenticated
   boundary must not print credentials or pass them to scanners/parsers.
-- **actions/upload-artifact** is a future producer-template dependency pinned to a
+- **actions/upload-artifact** is a producer-template dependency to be pinned to a
   qualified full commit. The local collector reads artifacts through the API.
 - **reviewdog and dorny/test-reporter** inform reporter/parser design. RDJSON is
   optional after the required JSON/Markdown/HTML flow; remote publishing is out
@@ -91,6 +106,15 @@ GitHub artifact metadata, downloads and hashes the archive, and stores its
 have separate digests. Setup, execution and upload remain separate observations.
 The verifier independently reads platform metadata, confirms referenced workflow
 path/SHA and applies the approved source contract before awarding workflow_bound.
+
+Artifact names, timestamps and successful upload steps do not independently bind
+the resulting artifact to a job. Run-log ZIPs lack a trustworthy per-step file
+boundary. [SPEC-004](specs/SPEC-004-artifact-provenance.md) therefore requires a
+verified signed assertion of the actual artifact ID/digest from the approved
+producer, with certificate run/attempt and independent job/check API checks.
+Untrusted project code runs only in a restricted guest; host signing, receipts
+and upload outputs must remain inaccessible to that guest. An attestation from
+an unapproved workflow does not satisfy this trust boundary.
 
 The subject can influence test code and generated JUnit; the producer's approval
 defines that trust boundary. A receipt is data, never an instruction to execute
@@ -117,13 +141,25 @@ There is no service database in v0.1. Each inspection creates a new directory
 with raw evidence, digests and reports. This gives reproducible local inputs;
 it does not protect against an owner rewriting both files and the manifest.
 
-The planned commands are `inspect`, `replay` and `refresh`. M0 does not claim
-these product commands are implemented. Inspect captures a snapshot and finishes
-with a live consistency check. Replay reads saved bytes/policy, preserves the
-original `observed_at` and emits freshness `unknown`. Refresh obtains new
-observations in a new directory and preserves the old report. A future history
-index can reference these records without changing
-their original observation times or source identities.
+The local `tools/evidence.py` command implements `verify` and `replay` for saved
+bundles. Replay writes a distinct bundle, retains the original `observed_at`,
+clears the new report's live recheck and emits freshness `unknown`. Original
+raw bytes and the historical report, including its live recheck, remain in the
+source bundle. The new manifest records the source manifest/report digests.
+This is deterministic replay of saved normalized observations, not a new
+provider observation or a renewal of trust.
+
+The store requires a new destination and writes the completion manifest last.
+Invalid or absent manifests make interrupted directories unusable. Paths,
+file counts, sizes and digests are checked; links and reparse points are refused.
+The caller must exclusively own the tree during IO. Create-once behavior does
+not protect against an owner rewriting both files and manifest, nor provide a
+sandbox against concurrent hostile filesystem mutation.
+
+The planned `inspect` and `refresh` flows are not implemented. Inspect will
+capture a snapshot and finish with a live consistency check; refresh will obtain
+new observations in a new directory. A future history index can reference these
+records without changing their original observation times or source identities.
 
 The product does not reconstruct a complete Agent session, operate a scheduler,
 manage tasks, write GitHub content, auto-accept changes or train a model. Existing

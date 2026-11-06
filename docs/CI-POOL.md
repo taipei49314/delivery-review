@@ -42,6 +42,13 @@ requires at least the existing 51 tests and rejects failures, errors, skips,
 expected failures and unexpected successes. A reduction of the baseline needs
 explicit review. It also checks the checkout SHA and tracked-source cleanliness.
 
+The complete suite includes the later collector, storage, subprocess, producer
+and packaging controls. Its test step may consume up to 480 seconds, subject to
+the workload's existing shared 540-second deadline. The admitted ten-minute
+outer limit, profile, credentials and declaration hash remain unchanged. The
+original 90-second test-step allowance is insufficient for the 527-test candidate;
+its timed-out run is retained as failure, not a completed suite result.
+
 EC publishes the native check **`ec / m0-contracts`** on the selected product
 commit. Receipt files are retained in EC under
 `sweep-receipts/<run>/<attempt>/workload-m0-contracts`:

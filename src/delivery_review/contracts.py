@@ -16,6 +16,8 @@ from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 from referencing.exceptions import NoSuchResource
 
+from .resources import definition_bytes
+
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "urn:delivery-review:contract:1:"
 MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -112,7 +114,7 @@ def _offline_only(uri: str) -> Resource:
 
 @lru_cache(maxsize=1)
 def validators() -> dict[str, Draft202012Validator]:
-    documents = {name: load_document(ROOT / "schemas" / f"{name}.schema.json") for name in SCHEMAS}
+    documents = {name: loads_strict(definition_bytes("schemas", f"{name}.schema.json")) for name in SCHEMAS}
     registry = Registry(retrieve=_offline_only).with_resources(
         (document["$id"], Resource.from_contents(document)) for document in documents.values())
     result = {}

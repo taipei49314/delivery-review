@@ -1,16 +1,26 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "delivery-review"
-version = "0.0.0"
-description = "M0 contracts for version-bound PR delivery evidence review"
+version = "1.0.0.dev0"
+description = "Version-bound PR delivery evidence review with offline replay"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = ["jsonschema==4.26.0"]
 
+[project.scripts]
+delivery-review = "delivery_review.cli:main"
+
+[project.urls]
+Repository = "https://github.com/taipei49314/delivery-review"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+namespaces = false
 
 [tool.uv]
 package = false
