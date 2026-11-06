@@ -122,6 +122,13 @@ while preserving policy block/review. A qualified `not_provided` ledger is
 solely on absence; that original native block remains in retained stdout. Required
 absence remains unmet. Findings and native errors do not use this absence exception.
 
+A merge-only checkout policy can coexist with head-bound static scans. Source
+obligations may use a workflow-bound test's independently established merge source;
+CI obligations may use that proof only for the exact same workflow/run/attempt/
+job/App. This reconciliation happens after all requirements, so policy ordering
+does not change the decision. A check's platform head SHA alone is not proof of
+an actual merge checkout. The static comparison remains `merge_base..head`.
+
 Every declared requirement appears exactly once. The existing contract reducer
 derives evidence completeness, freshness and policy independently and determines
 readiness/exit. The result is validated against the unchanged report/policy

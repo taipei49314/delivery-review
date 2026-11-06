@@ -17,7 +17,7 @@ from delivery_review.contracts import ContractError, canonical_bytes, validate_r
 from delivery_review.engine_runner import EngineExecution
 from delivery_review.inspection_profile import seal_inspection_profile
 from delivery_review.reporting import render_report_html, render_report_markdown
-from delivery_review.test_evidence import TestEvidenceInputs
+from delivery_review.test_evidence import EventSourceFact, TestEvidenceInputs, bind_test_evidence
 from test_engine_adapters import SUBJECT, control, raw
 from test_test_evidence import AuthoredInspection, digest
 
@@ -84,7 +84,9 @@ class CompositionTests(unittest.TestCase):
 
     def compose(self, **changes):
         values = dict(profile_bytes=self.fixture.profile_bytes, capture=self.fixture.capture_fixture.seal(), snapshot=self.fixture.snapshot,
-            engine_executions=self.engines, test_inputs={"pytest-linux": self.fixture.inputs()}, report_id="authored-composition", mode="live")
+            engine_executions=self.engines, report_id="authored-composition", mode="live")
+        if "test_inputs" not in changes:
+            values["test_inputs"] = {"pytest-linux": self.fixture.inputs()}
         values.update(changes)
         return compose_report(**values)
 
@@ -209,6 +211,40 @@ class CompositionTests(unittest.TestCase):
         html = render_report_html(report, self.fixture.profile["policy"])
         self.assertNotIn('<script>alert', html)
         self.assertIn('&lt;script&gt;', html)
+
+    def test_qualified_merge_checkout_coexists_with_head_bound_static_analysis(self):
+        value, snapshot = self.fixture.objects, self.fixture.snapshot
+        merge = value.commit(value.files({"README.txt": b"authored qualified merge"}), [snapshot.base_tip_sha, snapshot.head_sha])
+        event = EventSourceFact(value.objects[merge])
+        for phase in ("initial", "final"):
+            row = self.fixture.capture_fixture.find("pull_request", phase)
+            document = self.fixture.capture_fixture.payload(row)
+            document["merge_commit_sha"] = merge
+            self.fixture.capture_fixture.set_payload(row, document)
+        self.fixture.profile["policy"]["allowed_source_modes"] = ["github_merge"]
+        self.fixture.profile["policy"]["requirements"][:0] = [
+            {"id": "source", "kind": "source", "required": True, "minimum_binding": "reported", "selector": {}},
+            {"id": "ci", "kind": "ci_job", "required": True, "minimum_binding": "platform_bound",
+             "selector": {"workflow_id": 101, "app_id": 15368, "job_name": "pytest-linux"}}]
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        self.fixture.receipt["source"].update(mode="github_merge", checked_out_sha=merge,
+                                            merge_parents=[snapshot.base_tip_sha, snapshot.head_sha])
+        qualification = json.loads(self.fixture.qualification_bytes)
+        qualification["source_modes"] = ["github_merge"]
+        qbytes = canonical_bytes(qualification)
+        self.fixture.qualification = replace(self.fixture.qualification, source_modes=("github_merge",),
+            qualification_receipt_bytes=qbytes, qualification_receipt_sha256=digest(qbytes))
+        self.fixture.rebuild()
+        args = self.fixture.args(event_source=event)
+        expected = bind_test_evidence(**args).diagnostics["attestation_expected"]
+        proof = self.fixture.fake_attestation(expected)
+        inputs = TestEvidenceInputs(**{key: value for key, value in args.items()
+            if key not in {"profile_bytes", "capture", "snapshot", "requirement_id"}}, attestation=proof)
+        result = self.compose(test_inputs={"pytest-linux": inputs})
+        self.assertEqual({"evidence": "complete", "freshness": "current", "policy": "clear"}, result.report["state"])
+        for evidence in result.report["evidence"]:
+            self.assertEqual(snapshot.head_sha if evidence["kind"] in {"scanner", "ledger"} else merge, evidence["subject_sha"])
+        self.assertEqual([snapshot.base_tip_sha, snapshot.head_sha], result.report["subject"]["merge_parents"])
 
 
 if __name__ == "__main__":

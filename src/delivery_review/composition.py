@@ -236,6 +236,34 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
         if not any(row["id"] == item["id"] for row in evidence):
             evidence.append(item)
         obligations.append(obligation)
+    # allowed_source_modes constrains confirmed CI checkout, not static scans.
+    # A merge-only policy needs actual qualified merge-test source proof; the
+    # platform check's head SHA alone cannot stand in for that checkout. Apply
+    # this after all requirements so policy ordering cannot affect the result.
+    bound_tests = [row for row in evidence if row["kind"] == "test_report" and row["binding_level"] == "workflow_bound"]
+    for requirement, obligation in zip(policy["requirements"], obligations):
+        if requirement["kind"] not in {"source", "ci_job"}:
+            continue
+        item = next(row for row in evidence if row["id"] in obligation["evidence_ids"])
+        proofs = sorted(bound_tests, key=lambda row: row["id"])
+        if requirement["kind"] == "ci_job":
+            proofs = [row for row in proofs if all(row[key] == item[key]
+                for key in ("workflow_id", "run_id", "attempt", "job_id", "app_id", "job_name"))]
+        proofs = [row for row in proofs if (
+            row["subject_sha"] == snapshot.head_sha and "pr_head" in policy["allowed_source_modes"] or
+            row["subject_sha"] == subject["merge_commit_sha"] and "github_merge" in policy["allowed_source_modes"]
+            and subject["merge_parents"] == [snapshot.base_tip_sha, snapshot.head_sha])]
+        if not proofs:
+            continue
+        proof = proofs[0]
+        if requirement["kind"] == "source":
+            item.update(subject_sha=proof["subject_sha"], raw_sha256=proof["raw_sha256"], status="observed",
+                        messages=["Source established by " + proof["id"]])
+            obligation.update(outcome="satisfied", reason_codes=[])
+        else:
+            _, derived = _ci(requirement, capture, observations)
+            item.update(subject_sha=proof["subject_sha"], messages=item["messages"] + ["Test checkout established by " + proof["id"]])
+            obligation.update(derived)
     selected = [{"workflow_id": row["workflow_id"], "run_id": row["selection"]["run_id"], "attempt": row["selection"]["attempt"]}
                 for row in observations["workflows"] if row["selection"].get("status") == "selected"
                 and type(row["selection"].get("attempt")) is int]
