@@ -52,6 +52,19 @@ class PackageBoundaryTests(unittest.TestCase):
         (self.package / "__pycache__/module.pyc").write_bytes(b"not evidence")
         self.assertEqual({"version": __version__, "source_sha": "a" * 40}, _installed_identity(self.package))
 
+    def test_package_manager_hardlinks_are_hash_checked_without_weakening_bundle_rules(self):
+        cache_module = self.package.parent / "cached-module.py"
+        cache_manifest = self.package.parent / "cached-build.json"
+        os.link(self.package / "module.py", cache_module)
+        os.link(self.package / "_build_info.json", cache_manifest)
+        self.assertEqual("a" * 40, _installed_identity(self.package)["source_sha"])
+        from delivery_review.evidence.store import _read, BundleError
+        with self.assertRaises(BundleError):
+            _read(self.package / "module.py", 4096)
+        cache_module.write_bytes(b"changed through package cache alias")
+        with self.assertRaisesRegex(ContractError, "collector_installation_changed"):
+            _installed_identity(self.package)
+
     def test_changed_missing_and_extra_modules_refuse_live_identity(self):
         path = self.package / "module.py"
         original = path.read_bytes()

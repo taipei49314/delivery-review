@@ -1,16 +1,48 @@
 """Collector revision consistency; hashes are not publisher authentication."""
 import hashlib
+import os
 from pathlib import Path
 import re
+import stat
 
 from . import __version__
 from .contracts import ContractError, loads_strict, require
-from .evidence.store import _read
+from .evidence.store import _directories, _identity, _not_link
 from ._source_identity import SourceIdentityError, source_commit, source_paths
 
 
+def _installed_read(path: Path, budget: int) -> bytes:
+    """Read stable installed bytes, including package-manager cache hardlinks.
+
+    Installed packages are consistency-checked inputs, not create-once evidence
+    bundles. uv legitimately hardlinks them from its cache. Symlink/reparse
+    traversal, non-regular files, concurrent changes and digest mismatches remain
+    refused. This does not change the evidence store's single-link requirement.
+    """
+    _directories(path.parent)
+    before = path.lstat()
+    def regular(info):
+        require(_not_link(info) and stat.S_ISREG(info.st_mode), "unsafe_installed_file")
+    regular(before)
+    require(before.st_size <= budget, "installed_file_limit")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        regular(opened)
+        require(_identity(before) == _identity(opened), "collector_installation_changed")
+        raw = stream.read(budget + 1)
+        after = os.fstat(stream.fileno())
+    final = path.lstat()
+    regular(final)
+    require(len(raw) <= budget and len(raw) == before.st_size and
+            _identity(before) == _identity(after) == _identity(final) and
+            opened.st_ctime_ns == after.st_ctime_ns and before.st_ctime_ns == final.st_ctime_ns,
+            "collector_installation_changed")
+    return raw
+
+
 def _installed_identity(package: Path) -> dict:
-    info = loads_strict(_read(package / "_build_info.json", 2 * 1024 * 1024))
+    info = loads_strict(_installed_read(package / "_build_info.json", 2 * 1024 * 1024))
     require(type(info) is dict and set(info) == {"kind", "version", "package_version", "source_sha",
                                                "source_state", "files"}, "invalid_build_identity")
     require(info["kind"] == "delivery-review-build" and type(info["version"]) is int and info["version"] == 1,
@@ -28,7 +60,7 @@ def _installed_identity(package: Path) -> dict:
                 all(part not in {"", ".", ".."} and ":" not in part for part in name.split("/")),
                 "invalid_build_inventory")
         require(type(expected) is str and re.fullmatch(r"[0-9a-f]{64}", expected), "invalid_build_inventory")
-        raw = _read(package / name, 4 * 1024 * 1024)
+        raw = _installed_read(package / name, 4 * 1024 * 1024)
         require(hashlib.sha256(raw).hexdigest() == expected, "collector_installation_changed")
     return {"version": __version__, "source_sha": info["source_sha"]}
 
