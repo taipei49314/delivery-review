@@ -36,6 +36,16 @@ DOCKER_ARCHIVE_SHA256 = '3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2
 DOCKER_SHA256 = '3ac6daa3aff1afd1c0c673fa216fb592743c75ea406daa4ade413d933bc06f92'
 BASE_IMAGE = 'python@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b'
 PREDICATE_TYPE = 'https://github.com/taipei49314/delivery-review/attestation/pytest/v1'
+STAGES = frozenset({'identity-token', 'trusted-checkout', 'platform-identity', 'trusted-dependencies',
+    'source-acquisition', 'source-verification', 'isolated-tests', 'receipt',
+    'signing-identity', 'uploaded-artifact', 'predicate'})
+
+
+def _stage(name):
+    # Only literal controller phases reach the Actions log. Neither exceptions,
+    # credentials, platform bodies nor guest output are diagnostic messages.
+    require(type(name) is str and name in STAGES, 'invalid_producer_stage')
+    print('delivery-review: producer stage ' + name, flush=True)
 
 
 def _sha(raw):
@@ -145,7 +155,9 @@ def prepare(source_mode='pr_head'):
     producer_path(source_mode)
     require(sys.version_info[:2] == (3, 11) and platform.machine() == 'x86_64' and sys.platform == 'linux',
             'unsupported_hosted_platform')
+    _stage('identity-token')
     claims = request_claims(os.environ, source_mode=source_mode)
+    _stage('trusted-checkout')
     require((ROOT / '.git').is_dir() and not (ROOT / '.git').is_symlink()
             and _read(ROOT / '.git/HEAD', 1024).strip() == claims['job_workflow_sha'].encode(),
             'producer_checkout_mismatch')
@@ -155,17 +167,22 @@ def prepare(source_mode='pr_head'):
     # Only generated host paths/IDs are exported. No project strings enter a shell.
     _output({'producer_root': str(root)})
     transport = GitHubTransport(token=os.environ.get('GH_TOKEN'))
+    _stage('platform-identity')
     identity = collect_identity(claims, transport=transport, destination=root / 'platform', source_mode=source_mode)
     _save(root / 'identity.json', canonical_bytes(identity))
+    _stage('trusted-dependencies')
     runtime, image, wheels = prepare_dependencies(root)
+    _stage('source-acquisition')
     source = acquire_source(root / 'source', repository={'id': identity['repository_id'],
         'full_name': identity['repository_full_name']}, head_sha=identity['head_sha'], base_tip_sha=identity['base_tip_sha'],
         git_executable='/usr/bin/git', token=os.environ.get('GH_TOKEN'))
     event_source = acquire_source(root / 'event-source', repository={'id': identity['repository_id'],
         'full_name': identity['repository_full_name']}, head_sha=identity['event_source_sha'],
         base_tip_sha=identity['base_tip_sha'], git_executable='/usr/bin/git', token=os.environ.get('GH_TOKEN'))
+    _stage('source-verification')
     _save(root / 'event-source.commit', verify_event_source(event_source.snapshot, identity))
     snapshot = select_test_snapshot(source.snapshot, event_source.snapshot, identity)
+    _stage('isolated-tests')
     execution = execute_pytest(snapshot, runtime=runtime, image_digest=image, wheelhouse=wheels, test_path='tests',
                                source_mode=source_mode, pr_head_sha=identity['head_sha'])
     _save(root / 'tested-source.commit', execution.checked_out_commit_bytes)
@@ -186,6 +203,7 @@ def prepare(source_mode='pr_head'):
     producer = {'repository_id': identity['producer_repository_id'], 'workflow_path': identity['producer_path'],
                 'workflow_sha': identity['producer_sha'], 'run_id': identity['run_id'],
                 'attempt': identity['run_attempt'], 'job_id': identity['job_id']}
+    _stage('receipt')
     receipt = build_receipt(execution, source_claim=source_claim, producer_identity=producer,
         recorded_at=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), receipt_id=artifact_name(identity))
     upload = root / 'upload'
@@ -231,6 +249,7 @@ def build_predicate(identity, *, artifact_id, artifact_sha256, receipt_bytes, ju
 def attest():
     root = _saved_root()
     identity = loads_strict(_read(root / 'identity.json', 65536))
+    _stage('signing-identity')
     claims = request_claims(os.environ, source_mode=identity['source_mode'])
     require(all(claims[key] == str(identity[other]) for key, other in [('repository_id', 'repository_id'),
         ('run_id', 'run_id'), ('run_attempt', 'run_attempt'), ('check_run_id', 'check_run_id'),
@@ -238,6 +257,7 @@ def attest():
     current = collect_identity(claims, transport=GitHubTransport(token=os.environ.get('GH_TOKEN')),
                                destination=root / 'platform-before-signing', source_mode=identity['source_mode'])
     require(current == identity, 'platform_identity_changed_before_signing')
+    _stage('uploaded-artifact')
     artifact_id = number(os.environ.get('DELIVERY_REVIEW_ARTIFACT_ID'))
     digest = os.environ.get('DELIVERY_REVIEW_ARTIFACT_DIGEST')
     require(type(digest) is str and re.fullmatch(r'[0-9a-f]{64}', digest), 'invalid_upload_digest')
@@ -263,6 +283,7 @@ def attest():
     archive = read_artifact_zip(responses['archive'], policy_limits={'artifact_bytes': 25 * 1024 * 1024,
         'expanded_bytes': 4 * 1024 * 1024, 'archive_members': 2})
     require(dict(archive.files) == files, 'uploaded_member_mismatch')
+    _stage('predicate')
     predicate = build_predicate(identity, artifact_id=artifact_id, artifact_sha256=digest,
                                 receipt_bytes=files['receipt.json'], junit_bytes=files['junit.xml'])
     _save(root / 'predicate.json', canonical_bytes(predicate) + b'\n')

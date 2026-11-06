@@ -46,6 +46,17 @@ class ProducerReferenceTests(unittest.TestCase):
                     prepare_profile.prepare(repository='authored/reference', repository_id=9001,
                         workflow_id=1001, job_name='observed', producer_sha='d' * 40, source_mode=mode)
 
+    def test_reusable_and_caller_declare_exact_permissions_for_observed_api_routes(self):
+        expected = {'contents': 'read', 'actions': 'read', 'checks': 'read',
+                    'id-token': 'write', 'attestations': 'write'}
+        documents = [render.files('d' * 40, 'base', mode)['.github/workflows/delivery-review.yml'].decode()
+                     for mode in ('pr_head', 'github_merge')]
+        documents += [(ROOT / producer_path(mode)).read_text() for mode in ('pr_head', 'github_merge')]
+        for workflow in documents:
+            permission_block = workflow.split('\npermissions:\n', 1)[1].split('\njobs:', 1)[0]
+            observed = dict(line.strip().split(': ', 1) for line in permission_block.splitlines())
+            self.assertEqual(expected, observed)
+
 
 if __name__ == '__main__':
     unittest.main()

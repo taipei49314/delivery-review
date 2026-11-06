@@ -59,7 +59,7 @@ it unchanged as source provenance; later actual run receipts are separate files.
 Hosted execution requires a public, reachable full producer SHA in the original
 numeric repository, a same-repository PR in the dedicated reference, and GitHub
 Actions enabled with execution allowance. The consumer workflow must exist on
-the selected base and grant `contents: read`, `actions: read`, `id-token: write`
+the selected base and grant `contents: read`, `actions: read`, `checks: read`, `id-token: write`
 and `attestations: write`; repository/organization Actions policy must permit all
 pinned actions and the reusable workflow. The runner must supply the OIDC
 `check_run_id` and full reusable workflow identity that the controller can

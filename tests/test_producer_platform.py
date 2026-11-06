@@ -16,7 +16,7 @@ from delivery_review.contracts import canonical_bytes
 from producer.bootstrap import (AUDIENCE, BootstrapError, PRODUCER_PATH, PRODUCER_REPOSITORY,
     PRODUCER_REPOSITORY_ID, request_claims, validate_claims)
 from producer.platform_identity import artifact_name, collect_identity, derive_identity
-from producer.hosted import build_predicate, verify_event_source
+from producer.hosted import build_predicate, verify_event_source, _stage, main
 from delivery_review.source_snapshot import materialize_snapshot
 import test_source_snapshot as source_fixtures
 import test_producer_receipt as receipt_fixtures
@@ -65,6 +65,20 @@ class Response:
 
 
 class ProducerPlatformTests(unittest.TestCase):
+    def test_diagnostics_accept_only_fixed_stages_and_never_exception_text(self):
+        with patch('builtins.print') as output:
+            _stage('platform-identity')
+            output.assert_called_once_with('delivery-review: producer stage platform-identity', flush=True)
+        for value in ('AUTHORED_SECRET', '::error::forged', 'platform-identity\n::error::forged', [], None):
+            with self.subTest(value=value), patch('builtins.print') as output, self.assertRaises(BootstrapError):
+                _stage(value)
+            output.assert_not_called()
+        with patch('producer.hosted.sys.argv', ['hosted.py', 'prepare']), \
+                patch('producer.hosted.prepare', side_effect=BootstrapError('AUTHORED_SECRET')), \
+                patch('builtins.print') as output:
+            self.assertEqual(2, main())
+        output.assert_called_once_with('delivery-review: producer measurement or provenance step refused')
+
     def test_oidc_current_hosted_identity_and_full_sha_pin(self):
         claims, environment, _ = fixture()
         result = validate_claims(claims, environment, now=1100)
