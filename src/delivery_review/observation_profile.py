@@ -1,16 +1,14 @@
 """Validate the separate SPEC-001 profile; never a delivery readiness policy."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from jsonschema import Draft202012Validator
 from referencing import Registry
 
-from .contracts import ContractError, _offline_only, load_document, loads_strict, require
+from .contracts import ContractError, _offline_only, loads_strict, require
+from .resources import definition_bytes
 
-ROOT = Path(__file__).resolve().parents[2]
 _PROFILE_VALIDATOR = Draft202012Validator(
-    load_document(ROOT / "formats/github-observation-profile-v1.schema.json"),
+    loads_strict(definition_bytes("formats", "github-observation-profile-v1.schema.json")),
     registry=Registry(retrieve=_offline_only),
 )
 

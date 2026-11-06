@@ -5,12 +5,16 @@ The planned product connects Checkwash, Pinwash and optional Ledgerwash results
 with the PR's source identity, GitHub Actions execution and pytest evidence.
 Its output supports human review; it does not prove task correctness.
 
-**Current milestone: M1 in progress — raw GitHub observations and offline replay.**
+**Current milestone: implementation toward 1.0 (`1.0.0.dev0`), not a stable release.**
 The M0 contracts and acceptance specifications remain frozen. A source-checkout
 CLI now captures GitHub metadata and derives platform observations, including
 current-run/attempt/job/check associations and final rechecks. Offline replay uses
 the same mapper over preserved raw bytes. This does not authenticate a producer
 or decide delivery readiness. All E01–E18 product integrations remain **NOT_RUN**.
+
+The remaining acceptance criteria and implementation order are tracked in
+[RELEASE-1.0.md](docs/RELEASE-1.0.md). Source is licensed under Apache-2.0;
+recorded third-party evidence is not automatically relicensed.
 
 The open-source implementation direction is now defined by
 [SPEC-001](docs/specs/SPEC-001-github-observations.md) and
@@ -28,7 +32,7 @@ qualification. This profile is deliberately separate from delivery readiness.
   latest attempt. [Public API probes](docs/specs/SPEC-001-feasibility.md) are
   field research, not successful product integration.
 - A bounded GET collector, create-once raw captures, pure observations mapper,
-  JSON/Markdown output and inspect/verify/replay/refresh development commands.
+  JSON/Markdown/self-contained HTML output and inspect/verify/replay/refresh commands.
   See [GITHUB-OBSERVATIONS.md](docs/GITHUB-OBSERVATIONS.md) for setup, semantics
   and the limits of these platform observations.
 - Create-once local evidence bundles, bounded integrity verification and offline
@@ -39,8 +43,13 @@ qualification. This profile is deliberately separate from delivery readiness.
 - Representative synthetic GitHub API response fragments for E01. They are not
   recordings and have not been mapped by a collector.
 - Candidate locks for Checkwash 0.10.0, Pinwash 0.1.1 and Ledgerwash 0.5.0.
-  Their published wheels were downloaded and checked by SHA-256, METADATA and
-  RECORD without installation or execution. Adapter compatibility is NOT_RUN.
+  Their published wheels were checked by SHA-256, METADATA and RECORD. Public
+  CLI probes and pure adapters retain native findings, verdicts and coverage.
+  Full scanner execution integration remains pending; see
+  [SPEC-003](docs/specs/SPEC-003-engine-adapters.md).
+- A bounded pytest 8.4.2 xunit2 parser with real authored pytest probes;
+  [SPEC-002](docs/specs/SPEC-002-pytest-producer.md) separates parsing from
+  producer/artifact authentication and delivery readiness.
 - EC pool workload `m0-contracts`, using the existing Windows/Python 3.12
   generation and hash-pinned dependencies. See [CI-POOL.md](docs/CI-POOL.md) for
   dispatch and receipt rules, and [M0-VALIDATION.md](docs/M0-VALIDATION.md) for results.
@@ -95,6 +104,24 @@ not dispatch the central pool; use the recorded EC admission/dispatch procedure.
 This lane qualifies Windows/Python 3.12 only.
 Existing successful M0 receipts identify their tested commits; they do not
 qualify later local M1 changes.
+
+## Build and install the development CLI
+
+```sh
+uv build
+python -m venv .install
+.install/bin/python -m pip install dist/delivery_review-1.0.0.dev0-py3-none-any.whl
+.install/bin/delivery-review --help
+.install/bin/delivery-review observations --help
+```
+
+On Windows the executables are under `.install/Scripts`. A wheel contains its
+offline schemas and formats and can replay outside the source checkout. Live
+capture requires a clean source checkout or a build recording a clean source
+revision with a consistent installed inventory. A dirty development build can
+verify/replay but cannot claim a clean collector revision. The inventory is a
+consistency check, not a publisher signature. See [INSTALL.md](docs/INSTALL.md)
+for the reproducible development install and scope.
 
 ## Verify and replay a saved bundle
 

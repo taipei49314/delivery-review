@@ -1,9 +1,11 @@
 # Architecture
 
-Status: **M1 storage/replay slice in progress on the frozen M0 contract**.
-Schemas, synthetic contract fixtures, the local validator and local evidence
-bundle/replay APIs are implemented. The provider, installed-engine adapters,
-producer, parser and live report workflow below remain planned boundaries.
+Status: **implementation toward 1.0 on the frozen M0 contract**.
+Raw GitHub capture/versioned mapping, local replay, pytest parsing, pure engine
+adapters, static source materialization and installable CLI foundations exist.
+The isolated producer, independent artifact proof, complete report composition
+and product qualification remain unfinished. See [release gates](RELEASE-1.0.md)
+and [current state](../STATE.md) for the evidence behind each boundary.
 
 The authoritative semantics are in [CONTRACT.md](CONTRACT.md). Product
 integration evidence is tracked separately in [ACCEPTANCE.md](ACCEPTANCE.md).
@@ -61,6 +63,12 @@ the saved policy. Provider and scanner code performs IO; the evaluator does not
 fetch missing data, rerun a test, edit an exemption or change the source snapshot
 to obtain a better outcome.
 
+The full inspection profile binds all acquisition/provenance selectors into the
+existing policy identity under [ADR-003](amendments/ADR-003-inspection-policy-identity.md).
+This is separate from the observation-only profile. Schemas ship in the wheel
+and remain offline; release provenance and package inventories are consistency
+records, not publisher signatures.
+
 ## 3. Reuse boundaries
 
 - **Checkwash 0.10.0, Pinwash 0.1.1/SPEC 29, Ledgerwash 0.5.0/SPEC 5** are initial
@@ -77,7 +85,7 @@ to obtain a better outcome.
   It is not a runtime database and its historical labels are not new truth labels.
 - **GitHub CLI/API** provides the initial provider interface. The authenticated
   boundary must not print credentials or pass them to scanners/parsers.
-- **actions/upload-artifact** is a future producer-template dependency pinned to a
+- **actions/upload-artifact** is a producer-template dependency to be pinned to a
   qualified full commit. The local collector reads artifacts through the API.
 - **reviewdog and dorny/test-reporter** inform reporter/parser design. RDJSON is
   optional after the required JSON/Markdown/HTML flow; remote publishing is out
@@ -98,6 +106,15 @@ GitHub artifact metadata, downloads and hashes the archive, and stores its
 have separate digests. Setup, execution and upload remain separate observations.
 The verifier independently reads platform metadata, confirms referenced workflow
 path/SHA and applies the approved source contract before awarding workflow_bound.
+
+Artifact names, timestamps and successful upload steps do not independently bind
+the resulting artifact to a job. Run-log ZIPs lack a trustworthy per-step file
+boundary. [SPEC-004](specs/SPEC-004-artifact-provenance.md) therefore requires a
+verified signed assertion of the actual artifact ID/digest from the approved
+producer, with certificate run/attempt and independent job/check API checks.
+Untrusted project code runs only in a restricted guest; host signing, receipts
+and upload outputs must remain inaccessible to that guest. An attestation from
+an unapproved workflow does not satisfy this trust boundary.
 
 The subject can influence test code and generated JUnit; the producer's approval
 defines that trust boundary. A receipt is data, never an instruction to execute
