@@ -1,0 +1,41 @@
+{
+  "kind": "delivery-review-engine-regression-expectation-amendment",
+  "version": 2,
+  "date": "2026-11-06",
+  "scope": "First-party harness expectations only; frozen acceptance fixtures, product code and engine pins are unchanged.",
+  "rationale": "CONTRACT section 5 and ACCEPTANCE E15 distinguish absent ledger evidence (not_provided) from supported ledger evidence with gaps. The version-1 authored helper mistakenly assigned gaps to all Ledgerwash controls. Native engine exits/verdicts and adapter statuses were already correct. Correct only the two absent-input coverage expectations; do not relabel either original mismatch as a pass.",
+  "original_run": {
+    "directory": "work/engine-qualification/regression-linux-001",
+    "receipt_sha256": "d2b3abd91da0bc70ed0e4eaabbc5d9ff9e39bf08df4eb875c8278658181422e0",
+    "inventory_sha256": "43f20951ff351bd1dc61e11374de36497f52e5183fc0b5f4581eb9523259fea1",
+    "runner_sha256": "0e0db040032b8b92822e36984b95fd680e4883d6c60c7051af16eaf4cedb1764",
+    "selection_sha256": "c2afdb70fef2f36115338050b60f72f17a3a9bdc757549dd5b086c9b5fd1cdcd",
+    "cases": 46,
+    "expectations_matched": 44,
+    "native_preserved": 46
+  },
+  "changes": [
+    {
+      "case_id": "ledgerwash-absent",
+      "original_input_sha256": "c953a824c961302366e300d1d0f44f1811c50bf6afdfb9eda12cd6b6029e59f5",
+      "old_expectation": {"adapter_status": "not_provided", "coverage": "gaps", "native_exit": 0, "native_verdict": "pass"},
+      "new_expectation": {"adapter_status": "not_provided", "coverage": "not_provided", "native_exit": 0, "native_verdict": "pass"},
+      "original_observation": {"adapter_status": "not_provided", "adapter_verdict": "not_judged", "coverage": "not_provided", "known_block": false, "native_exit": 0, "native_verdict": "pass"}
+    },
+    {
+      "case_id": "ledgerwash-absent-strict",
+      "original_input_sha256": "32bb755f764a35adabceffb3d97355181b7feaba5dbdfd33cf940c0644fdc698",
+      "old_expectation": {"adapter_status": "not_provided", "coverage": "gaps", "native_exit": 1, "native_verdict": "block"},
+      "new_expectation": {"adapter_status": "not_provided", "coverage": "not_provided", "native_exit": 1, "native_verdict": "block"},
+      "original_observation": {"adapter_status": "not_provided", "adapter_verdict": "not_judged", "coverage": "not_provided", "known_block": true, "native_exit": 1, "native_verdict": "block"}
+    }
+  ],
+  "additional_harness_checks": [
+    "Future public-fixture comparisons require completed adapter status as well as matching native finding expectations. All original thirty public cases were separately audited completed.",
+    "Future preservation checks require the native verdict when the adapter completes and not_judged otherwise; original parsed native output and finding identities remain checked.",
+    "Future receipts record start/end selected source-file hashes and whether they changed. This is still a development probe, not a clean immutable product qualification."
+  ],
+  "rerun_case_set": "ledger-absence-amendment",
+  "full_product_integration": "NOT_RUN",
+  "compatibility": "No contract or product schema change. No upstream fixture expectation, detector or frozen acceptance file is changed. Original version-1 inputs, outputs and mismatches remain retained."
+}
