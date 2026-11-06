@@ -18,6 +18,7 @@ Product release: **not released** (`0.0.0` source-checkout tooling).
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
 | Raw workflow-run selection | Pure kernel implemented with authored byte/page controls; not a full provider. Listing attempt and test checkout remain unconfirmed. |
 | Public API feasibility | Read-only field probes recorded in docs/specs/SPEC-001-feasibility.md; no product integration qualification. |
+| Source-pinned public API acquisition/replay smoke | 42 HTTP 200 responses, 32 native jobs retained, byte-identical offline replays; result partial due to listing PR-association gap. See docs/specs/SPEC-001-live-smoke.md. |
 | Raw GitHub capture/reader, bounded GET transport and current-run/attempt/job/check mapping | Implemented with synthetic controls; see docs/GITHUB-OBSERVATIONS.md. Controlled live qualification remains pending. |
 | Observation inspect/verify/replay/refresh, final recheck and JSON/Markdown output | Implemented as source-checkout preview; raw replay uses the same pure mapper. No delivery readiness or producer claim. |
 | Artifact transport | Not implemented. |
@@ -40,8 +41,9 @@ instruction, Actions now uses the existing EC pool through `m0-contracts`; see
 `docs/CI-POOL.md`. The hosted workflow has been removed, and its old result is
 retained as history. A Windows pool pass does not qualify Linux.
 
-Next gate: record real source-pinned API smoke results, qualify a controlled
-same-repository PR path and establish independent reproduction. Producer/source
+Next gate: define evidence precedence for absent listing associations versus
+independent run/attempt details, qualify a controlled same-repository PR path,
+and establish independent reproduction. Producer/source
 proof, artifact/JUnit and scanner qualification follow the standard public
 end-to-end path. Platform metadata alone cannot satisfy those obligations.
 Keep expected outputs fixed;

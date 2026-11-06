@@ -129,5 +129,10 @@ behavior, not a controlled producer run, Linux qualification, independent extern
 adoption, or the full E01-E18 release gate. Real API smoke receipts, when recorded,
 must identify their exact product source and remain separate from these controls.
 
+The [first source-pinned public smoke](specs/SPEC-001-live-smoke.md) captured
+42 responses and replayed them identically. Its result remained partial because
+the run-list PR association was absent even though the detail endpoints supplied
+it; this limitation is recorded explicitly and does not qualify a complete path.
+
 Artifact transport, approved producer/source proof, pytest/JUnit, scanner adapters,
 clean install qualification and external reproduction remain subsequent gates.
