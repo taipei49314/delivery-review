@@ -1,7 +1,8 @@
 # SPEC-004 — artifact/job provenance through an isolated approved producer
 
-Status: **design selected; official-verifier feasibility observed; producer and
-product qualification NOT_RUN**. This extends [SPEC-002](SPEC-002-pytest-producer.md)
+Status: **design selected; bounded official-verifier adapter implemented and
+upstream signed-fixture controls observed on Windows/Linux; producer and product
+qualification NOT_RUN**. This extends [SPEC-002](SPEC-002-pytest-producer.md)
 without relaxing contract-v1 `workflow_bound` or changing frozen receipt/report
 schemas. Research was read-only, using public data and upstream test vectors.
 No workflow, attestation or release was published; no reviewed PR code ran.
@@ -270,7 +271,7 @@ could not fabricate JUnit.
 
 ## 5. Verifier boundary and replay envelope
 
-The future bounded runner must invoke an operator-pinned absolute `gh` executable
+The bounded runner must invoke an operator-pinned absolute `gh` executable
 using argv, never a shell or receipt-provided command. For a captured artifact
 and bundle, the effective command is:
 
@@ -330,6 +331,109 @@ original observation times and does not fetch missing artifacts or promote
 freshness. Local hashes/envelopes do not protect against an owner rewriting both
 evidence and manifests; they are integrity bookkeeping, not another signature.
 
+### Implemented adapter version 1
+
+`src/delivery_review/adapters/github_attestation.py` exposes two execution
+interfaces. Both require inert `artifact_bytes`, `bundle_bytes`,
+`trusted_root_bytes`, an absolute `gh_executable`, the approved `gh_sha256`, a
+trusted `expected` object, a new `destination`, and optional `AttestationLimits`.
+They do not accept saved verified JSON as a substitute for running the tool.
+
+`verify_github_attestation` checks the fixed custom product predicate. Its
+`expected` object has exactly these fields:
+
+```text
+repository_id, repository_full_name,
+certificate_source_sha, certificate_event,
+run_id, run_attempt,
+producer_repository_full_name, producer_path, producer_sha,
+job_id, check_run_id, artifact_id,
+artifact_sha256, receipt_sha256, junit_sha256
+```
+
+IDs are positive integers at most 2^53−1, with no bool/float coercion. Digests
+are complete lowercase hex. `certificate_event` is `pull_request` for this
+product profile. The function derives the exact subject URL, fixed predicate
+type and `pytest-isolated-container-v1` producer profile. The event-source
+`certificate_source_sha` is explicit: it must not be guessed from a tested PR
+head. The composer independently establishes the event-source SHA and compares
+the receipt's tested checkout against the frozen source contract.
+
+`verify_attestation_cryptography` is a narrower general verification interface
+used for official upstream qualification vectors. Its expected object replaces
+the six job/artifact/hash fields with exact `subject_name` and `predicate_type`;
+it allows the fixed product type or SLSA v1 and the three events `pull_request`,
+`workflow_dispatch`, and `push`. It checks certificate and subject only and
+always leaves `predicate` unconfirmed. It cannot substitute for the product
+interface or qualify arbitrary SLSA metadata as a delivery-review proof.
+
+The returned `AttestationExecution` contains immutable `manifest_bytes`,
+`raw_files`, and `observation_bytes`, with defensive parsed `manifest` and
+`observation` properties. `verification.json` is written last. The observation
+separates official cryptographic success, certificate/subject/predicate matches,
+original tool output, process facts, and integrity errors. The fields
+`platform_binding`, `producer_qualification`, and `tested_source_binding` remain
+`unconfirmed` in both interfaces. The composer must independently use retained
+platform records and the approved producer qualification before awarding
+`workflow_bound`; an expected dictionary is not platform evidence.
+
+Only the following exact GitHub CLI 2.98.0 AMD64 binaries are supported:
+
+| Platform | Binary SHA-256 |
+| --- | --- |
+| Windows | `a1701e3c806a805981554ace7df04812772c6449bdcfd1a77675013d97786401` |
+| Linux | `62885b97de6a0cd85e616cdd94bcda908bf5cf1018094385892b05cea3537163` |
+
+Both were downloaded from the official immutable
+[v2.98.0 release](https://github.com/cli/cli/releases/tag/v2.98.0), checked against
+its published checksums and extracted as single inert regular binary members.
+The Windows release binary matches the earlier installed-binary observation.
+The Windows ZIP digest is
+`c28c7b3b584967a05b74d9eaf7481bff24ddc34930bf2d6e442c148236561eb1`;
+the Linux tarball digest is
+`3b8ac6b30336802fc1a858d7c084e11cdf24ac1a761ca90b68022d7d729208de`.
+This records official HTTPS/checksum provenance; independent publisher-signature
+qualification remains a release requirement. Passing a caller-selected hash does
+not add it to the approved binary set.
+
+The currently supported saved official trusted-root export is the SHA-256
+`65ca537f6ed8a47fd0e560c421baa1f6c1efb8b25fc200d8c5c02c0e92eb2b9c`
+recorded below. A subject-provided or unknown root is refused before execution.
+Rotating this pin requires a reviewed trust-bootstrap update; no dynamic root
+download occurs while verifying an artifact.
+
+Each execution copies the verified binary into a new private directory and
+rechecks it and the saved inputs after the process exits. It uses the bounded
+process-tree implementation from SPEC-003. HOME, config, cache and temporary
+directories are new. Tokens, debug variables and unrelated host configuration
+are absent; prompts/update notifications are disabled and proxy addresses are
+unusable. The manifest explicitly records that network isolation is not
+OS-enforced. Original byte inputs are saved before invocation. Post-execution
+integrity failure preserves raw output while refusing proof.
+
+Default timeout is 60 seconds, with a hard maximum of 120. The artifact cap is
+25 MiB, bundle/stdout caps 2 MiB each, trusted roots/stderr 1 MiB each, and binary
+128 MiB. Local values may decrease these caps only. Version 1 accepts one JSON
+Sigstore v0.3 bundle with one DSSE signature, stores it as `.json` for the
+official CLI, and requires one verified result and one signed subject. JSONL
+collections and other bundle/verification versions fail closed in this slice.
+Unknown output structure, malformed UTF-8, duplicate keys, nonfinite numbers,
+depth over 32 and more than 100,000 JSON nodes are refused. Native finite floats
+may be preserved outside the strict product predicate.
+
+The original DSSE payload is also parsed with duplicate-key refusal and compared
+to the official verified statement. This is a consistency filter only: the
+unverified payload never supplies authenticated claims or replaces the tool's
+verified output. It prevents duplicate signed keys from being accepted merely
+because another JSON implementation normalized them. Every product-predicate
+key and exact type must agree with the expected independent observation.
+
+Observed gh 2.98.0 output retains a generic `verifiedIdentity.issuer` matcher
+even when the exact issuer flag is supplied. The adapter therefore checks the
+authenticated certificate's `issuer` itself, along with exact signer, source
+repository ID/URI/SHA, trigger, hosted-runner state and run/attempt URI. A
+displayed verifier-policy hint is not used in place of the certificate.
+
 ## 6. Actual read-only verifier experiment, 2026-11-06
 
 The upstream files came from the public `cli/cli` tag v2.98.0, resolved to commit
@@ -365,6 +469,16 @@ tool/input/output fingerprints and all five native exits. The successful result
 is `valid_offline.stdout.json`; original inputs and separate negative-control
 copies are retained in the same ignored directory. No output was manufactured
 to simulate successful cryptographic verification.
+
+The subsequent `probe_verifier_adapter.py` runs the official release binaries
+through the implemented bounded adapter on Windows/Python 3.12 and Linux/Python
+3.11. Its correct upstream SLSA control returns native exit 0 and matching
+certificate/subject; changed artifact bytes and signer SHA return exit 1.
+Wrong expected attempt, subject name and event-source SHA still return native
+exit 0 from the official crypto verifier but are rejected by the adapter's exact
+claim comparison. Every result leaves platform/producer/tested-source binding
+unconfirmed. The checked-in custom-predicate unit controls are explicitly
+synthetic parser/process-response controls, not newly signed product evidence.
 
 ## 7. Required qualification before awarding workflow_bound
 
