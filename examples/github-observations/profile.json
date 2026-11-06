@@ -1,0 +1,21 @@
+{
+  "kind": "delivery-review-github-observation-profile",
+  "profile_version": 1,
+  "profile_id": "synthetic-python-pr-observations",
+  "api_version": "2026-03-10",
+  "repository": {"id": 9001, "full_name": "fixture-owner/fixture-repo"},
+  "source_mode": "pr_head",
+  "selection": "latest_applicable_run_number_v1",
+  "workflows": [
+    {"id": 101, "path": ".github/workflows/ci.yml", "event": "pull_request", "app_id": 15368,
+     "job_names": ["pytest-linux"]}
+  ],
+  "limits": {
+    "per_page": 100,
+    "max_pages": 10,
+    "max_response_bytes": 2097152,
+    "max_total_bytes": 104857600,
+    "max_requests": 200,
+    "timeout_seconds": 30
+  }
+}
