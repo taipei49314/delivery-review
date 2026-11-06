@@ -97,6 +97,29 @@ class InspectionCliTests(unittest.TestCase):
         self.assertEqual("unknown", json.loads(stdout)["state"]["freshness"])
         self.assertNotIn("authored-private-token", stdout + stderr)
 
+    def test_same_length_tamper_has_closed_integrity_reason_and_creates_no_report(self):
+        target = self.saved / "report.html"
+        original = target.read_bytes()
+        target.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        for operation in ("verify", "replay", "refresh"):
+            args = ["verify", str(self.saved)] if operation == "verify" else self.arguments(operation)
+            with self.subTest(operation=operation), patch.object(inspection_cli, "inspect_pr", side_effect=AssertionError("no network")):
+                code, stdout, stderr = self.run_cli(args)
+            self.assertEqual(2, code)
+            self.assertEqual("", stdout)
+            self.assertEqual({"operation": operation, "status": "error", "reason": "raw_evidence_digest_mismatch"}, json.loads(stderr))
+            self.assertFalse((self.root / "new").exists())
+        self.assertEqual(bytes([original[0] ^ 1]) + original[1:], target.read_bytes())
+
+    def test_integrity_diagnostic_does_not_relay_untrusted_or_unrelated_errors(self):
+        for failure in (ValueError("bundle file digest mismatch"), ValueError("secret-containing untrusted source text")):
+            with patch.object(inspection_cli, "verify_inspection", side_effect=failure):
+                code, stdout, stderr = self.run_cli(["verify", str(self.saved)])
+            self.assertEqual(2, code)
+            self.assertEqual("", stdout)
+            self.assertEqual("invalid_input_or_operation_failed", json.loads(stderr)["reason"])
+            self.assertNotIn("secret-containing", stderr)
+
     def test_refresh_reuses_original_policy_and_pr_and_new_collector_identity(self):
         before = {path.relative_to(self.saved).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                   for path in self.saved.rglob("*") if path.is_file()}

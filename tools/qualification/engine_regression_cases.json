@@ -1,0 +1,195 @@
+{
+  "kind": "delivery-review-native-engine-regression-selection",
+  "version": 1,
+  "upstream": {
+    "repository": "taipei49314/checkwash",
+    "source_sha": "100699796d942af30644738ffbcd1f1c939411c5",
+    "source_ref_at_selection": "v0.10.0",
+    "license": "Apache-2.0"
+  },
+  "scope": "adapter and public CLI regression; not independent accuracy evidence or E01-E18 product acceptance",
+  "selection_method": "Declared before execution: Python assertion/expectation/tolerance/removal/skip/catch, CI/config/exemption, JS assertion/registration/catch, refactors and known opaque-credit residual. Filename polarity and prose are not labels; explicit upstream expect sections are retained independently.",
+  "limits": "GitHub contents listing was capped at 1000 names; this is a purposeful subset, not a corpus inventory or random sample.",
+  "cases": [
+    {
+      "case_id": "assert_weakened_pos",
+      "path": "tests/cases/assert_weakened_pos.gwcase",
+      "git_blob_sha": "05f237c632846d309f6db284c458671c21cd06e0",
+      "size_bytes": 581
+    },
+    {
+      "case_id": "assert_removed_pos",
+      "path": "tests/cases/assert_removed_pos.gwcase",
+      "git_blob_sha": "72c43f4ec25239b768bd0fc65e23292aaf05be17",
+      "size_bytes": 602
+    },
+    {
+      "case_id": "assert_substituted_pos",
+      "path": "tests/cases/assert_substituted_pos.gwcase",
+      "git_blob_sha": "1377b39a8d10c72918a5c0b2e0215ecef73b28bc",
+      "size_bytes": 769
+    },
+    {
+      "case_id": "expected_hardcoded_pos",
+      "path": "tests/cases/expected_hardcoded_pos.gwcase",
+      "git_blob_sha": "2cae2a359c37e7539eb374ff7b534ec8f1b3e3c6",
+      "size_bytes": 1248
+    },
+    {
+      "case_id": "handrolled_tolerance_widened_pos",
+      "path": "tests/cases/handrolled_tolerance_widened_pos.gwcase",
+      "git_blob_sha": "d26087faaa18dd46d8ece67ed5d5c243ab5d68f5",
+      "size_bytes": 695
+    },
+    {
+      "case_id": "broad_except_in_test_pos",
+      "path": "tests/cases/broad_except_in_test_pos.gwcase",
+      "git_blob_sha": "974e7369b05d9469d79768ac57313a2251fc773c",
+      "size_bytes": 789
+    },
+    {
+      "case_id": "aliased_skip_marker_pos",
+      "path": "tests/cases/aliased_skip_marker_pos.gwcase",
+      "git_blob_sha": "77f33725affb4c840c9074a6a8167affbbbc6c4e",
+      "size_bytes": 515
+    },
+    {
+      "case_id": "class_skip_pos",
+      "path": "tests/cases/class_skip_pos.gwcase",
+      "git_blob_sha": "8aed59d26b2ac8dc51fd7b1ad9a331187cd781a3",
+      "size_bytes": 741
+    },
+    {
+      "case_id": "ci_weakened_pos",
+      "path": "tests/cases/ci_weakened_pos.gwcase",
+      "git_blob_sha": "3e6c6e6d1c078f64dcb04139ac8d017d0dfd8b05",
+      "size_bytes": 483
+    },
+    {
+      "case_id": "ci_step_if_false_pos",
+      "path": "tests/cases/ci_step_if_false_pos.gwcase",
+      "git_blob_sha": "3c8a004ff92e0b4acc57e8d7eaebf0cfd1f6ed2f",
+      "size_bytes": 1177
+    },
+    {
+      "case_id": "ci_trigger_pull_request_removed_pos",
+      "path": "tests/cases/ci_trigger_pull_request_removed_pos.gwcase",
+      "git_blob_sha": "b843d61f9e005d0344382bd9a8e1787170d6e251",
+      "size_bytes": 1083
+    },
+    {
+      "case_id": "conftest_collection_control_not_repaired_pos",
+      "path": "tests/cases/conftest_collection_control_not_repaired_pos.gwcase",
+      "git_blob_sha": "b3f1b2360b2db11c6e4423abde2e8072018f92e6",
+      "size_bytes": 1472
+    },
+    {
+      "case_id": "guardrail_checkwash_config_and_weakening_pos",
+      "path": "tests/cases/guardrail_checkwash_config_and_weakening_pos.gwcase",
+      "git_blob_sha": "5e3290976ffbbc4dc21f13c7329a7c250988249f",
+      "size_bytes": 712
+    },
+    {
+      "case_id": "exemption_added_checkwash_pos",
+      "path": "tests/cases/exemption_added_checkwash_pos.gwcase",
+      "git_blob_sha": "8c8286eb23262917aaa02691fa69911f5ba789e3",
+      "size_bytes": 640
+    },
+    {
+      "case_id": "js_chai_assert_weakened_pos",
+      "path": "tests/cases/js_chai_assert_weakened_pos.gwcase",
+      "git_blob_sha": "6b50a8291db61576a65400293c89edb48fd2730d",
+      "size_bytes": 937
+    },
+    {
+      "case_id": "js_catch_assertion_swallowed_pos",
+      "path": "tests/cases/js_catch_assertion_swallowed_pos.gwcase",
+      "git_blob_sha": "0e1baca0b7b63a82b4bb208b448b368e700077de",
+      "size_bytes": 645
+    },
+    {
+      "case_id": "js_ava_is_to_truthy_pos",
+      "path": "tests/cases/js_ava_is_to_truthy_pos.gwcase",
+      "git_blob_sha": "91475655e09264a75898d26751b22fcce9dc8cfe",
+      "size_bytes": 823
+    },
+    {
+      "case_id": "js_dead_registration_if_false_pos",
+      "path": "tests/cases/js_dead_registration_if_false_pos.gwcase",
+      "git_blob_sha": "07903204b1419ba5d9a95949fcd016df255a1a31",
+      "size_bytes": 1004
+    },
+    {
+      "case_id": "js_chai_closeto_delta_pos",
+      "path": "tests/cases/js_chai_closeto_delta_pos.gwcase",
+      "git_blob_sha": "fbbf2bf4ca03989dd1efc806620abf8ee4e1fb39",
+      "size_bytes": 939
+    },
+    {
+      "case_id": "js_describe_skip_pos",
+      "path": "tests/cases/js_describe_skip_pos.gwcase",
+      "git_blob_sha": "0864bc01fa1e21f5a749968633c5cf84f0ee5915",
+      "size_bytes": 1405
+    },
+    {
+      "case_id": "assert_reordered_neg",
+      "path": "tests/cases/assert_reordered_neg.gwcase",
+      "git_blob_sha": "0e3fde6e04316bbd2f42ab080f41f9b445c0c3f9",
+      "size_bytes": 478
+    },
+    {
+      "case_id": "assert_renamed_subject_neg",
+      "path": "tests/cases/assert_renamed_subject_neg.gwcase",
+      "git_blob_sha": "6c1bfaf6223121b24202510a0f90757c8bf4b424",
+      "size_bytes": 449
+    },
+    {
+      "case_id": "chained_reformat_neg",
+      "path": "tests/cases/chained_reformat_neg.gwcase",
+      "git_blob_sha": "1d90ce637b6a5be5ad41f5a83954e27a03cd6b4b",
+      "size_bytes": 523
+    },
+    {
+      "case_id": "broad_except_reraises_neg",
+      "path": "tests/cases/broad_except_reraises_neg.gwcase",
+      "git_blob_sha": "3806a128c06815bccd89a62281a35a9b89742be4",
+      "size_bytes": 480
+    },
+    {
+      "case_id": "handrolled_tolerance_tightened_neg",
+      "path": "tests/cases/handrolled_tolerance_tightened_neg.gwcase",
+      "git_blob_sha": "85c1372a5c47508a3e1386842f15a88ab12500e0",
+      "size_bytes": 605
+    },
+    {
+      "case_id": "js_chai_true_spelling_neg",
+      "path": "tests/cases/js_chai_true_spelling_neg.gwcase",
+      "git_blob_sha": "9ee76729657c9803f713ef9add7982fd03788f61",
+      "size_bytes": 682
+    },
+    {
+      "case_id": "js_chai_expected_spelling_neg",
+      "path": "tests/cases/js_chai_expected_spelling_neg.gwcase",
+      "git_blob_sha": "156c22513ce11fb8a64a6bc63c482034cde5d0ce",
+      "size_bytes": 823
+    },
+    {
+      "case_id": "ci_config_migrated_neg",
+      "path": "tests/cases/ci_config_migrated_neg.gwcase",
+      "git_blob_sha": "d919986724403602d1dcca1c0936543fbbb4bc81",
+      "size_bytes": 954
+    },
+    {
+      "case_id": "assert_removed_moved_neg",
+      "path": "tests/cases/assert_removed_moved_neg.gwcase",
+      "git_blob_sha": "eec6cae5d0a3f886922f3f60b981bbde384e1d80",
+      "size_bytes": 691
+    },
+    {
+      "case_id": "c_extension_still_opaque_neg",
+      "path": "tests/cases/c_extension_still_opaque_neg.gwcase",
+      "git_blob_sha": "0dfb2bc43cfe900636b1269234d738467aa71fa2",
+      "size_bytes": 684
+    }
+  ]
+}

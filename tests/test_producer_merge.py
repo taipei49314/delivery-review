@@ -39,7 +39,8 @@ def merge_identity(base, head, merge):
     environment['GITHUB_SHA'] = merge
     data['pull_request']['base']['sha'] = base
     data['pull_request']['head']['sha'] = head
-    data['pull_request']['merge_commit_sha'] = merge
+    data['merge_ref']['object'].update(sha=merge,
+        url='https://api.github.com/repos/authored/reference/git/commits/' + merge)
     for run in (data['run'], data['attempt']):
         run.update(head_sha=head, referenced_workflows=[{'path': claims['job_workflow_ref'], 'sha': 'd' * 40}])
     data['jobs'][0]['head_sha'] = data['check']['head_sha'] = head

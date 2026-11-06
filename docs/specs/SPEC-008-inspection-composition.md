@@ -10,7 +10,8 @@ frozen contract-v1 schemas and forty expected cases remain unchanged.
 profile, verified raw GitHub capture, independently hashed static source snapshot
 and one policy test requirement. It receives optional original artifact bytes,
 artifact-detail and producer-repository HTTP facts, canonical event-source Git
-commit bytes, an actual `AttestationExecution`, and an approved producer
+commit bytes and optional original merge-reference HTTP fact, an actual
+`AttestationExecution`, and an approved producer
 qualification. It returns evidence, obligation, retained bytes and diagnostics.
 `archive_bytes` is the normal collector input; alternatively `artifact` accepts
 an existing parsed archive object, whose original bytes are reparsed anyway.
@@ -64,11 +65,25 @@ read attempt response must identify exactly one approved reusable workflow at it
 full SHA, and the producer repository response must match the approved numeric ID.
 
 For `EventSourceFact`, the verifier hashes canonical Git commit-object bytes and
-parses actual parents. A merge event source must equal the independently observed
-PR merge SHA and have exactly `[base_tip, head]` as its parents. Its certificate
-source SHA can differ from the tested `pr_head`; those are separate facts. A
-tested merge mode also needs explicit policy permission and producer qualification
-for that mode. Trees that merely look similar do not establish source equivalence.
+parses actual parents. Its source basis is explicit under
+[ADR-004](../amendments/ADR-004-github-merge-reference.md). New
+`github_merge_reference_v1` inputs require the original exact PR merge-reference
+HTTP fact and canonical commit bytes. The fixed request route, returned ref,
+commit object type/full SHA/repository URL, canonical object hash and exact
+ordered `[base_tip, head]` parents must agree. Missing or invalid reference proof
+cannot fall back to a PR-head certificate source or a removed PR response field.
+The original reference request/body is retained even on failure; PR JSON is not
+rewritten to insert a synthetic merge field. Any deprecated PR merge field is
+ignored under the new basis, including an explicitly null or inconsistent value;
+the independent reference and canonical commit remain mandatory.
+
+Historical `legacy_pr_field_v1` inputs retain their original PR merge-field and
+head-source interpretation; stray reference bytes do not upgrade that basis.
+Direct binding calls cannot combine that legacy basis with a reference fact.
+The certificate source SHA can differ from the tested `pr_head`; those remain
+separate facts. A tested merge mode also needs explicit policy permission and
+producer qualification for that mode. Trees that merely look similar do not
+establish source equivalence.
 
 The binder exposes `diagnostics.attestation_expected` once the original platform,
 artifact and receipt facts suffice. The orchestrator uses these exact expectations
@@ -156,7 +171,7 @@ partial-recheck representation requires an explicit versioned contract amendment
 The composer returns an exact raw inventory and byte mapping for the create-once
 inspection store. It keeps original capture/profile, source inventory, native
 engine manifests/streams/policy, artifact/receipt/JUnit, API facts, event-source
-commit, qualification receipt and attestation execution inputs. Raw Git source
+commit and reference, qualification receipt and attestation execution inputs. Raw Git source
 objects and controller setup logs also belong in the full inspection store;
 the source/execution acquisition readers own their inventories. The composer
 does not overwrite a prior report or repair an altered digest.

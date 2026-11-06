@@ -209,6 +209,20 @@ fetch tags, recurse into submodules, write a checkout, run maintenance, execute 
 files or invoke installation/build scripts. The quarantine is a newly generated
 bare repository, not a copied Git directory.
 
+Its controller-owned configuration sets `core.createObject=rename`. Git's
+object finalization otherwise can publish a file with a hardlink followed by
+unlinking the temporary name; the active quarantine monitor refuses any observed
+hardlink. Rename avoids that legitimate publication window without relaxing
+the live/final single-link checks or canonical object digest validation.
+Git documents that rename can overwrite an existing object pathname. This
+boundary uses a new, private, exclusive quarantine for one fetch, never a reused
+repository, and independently validates the resulting objects. See the
+[Git configuration description](https://github.com/git/git/blob/v2.43.0/Documentation/config/core.txt)
+and [pack publication implementation](https://github.com/git/git/blob/v2.43.0/builtin/index-pack.c).
+An observed development `source_quarantine_link` failure was not reproduced by
+twelve separate fetch probes; the publication mechanism is established by Git's
+source, but it is not a proven diagnosis of that particular failure.
+
 The inherited environment is discarded except essential operating-system values.
 New empty HOME/USERPROFILE/XDG directories also prevent `.netrc` or user-specific
 credential lookup. Configuration disables helpers, prompts, proxies, cookies,

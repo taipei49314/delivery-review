@@ -25,7 +25,7 @@ from delivery_review.contracts import ContractError, canonical_bytes, loads_stri
 from delivery_review.inspection_profile import seal_inspection_profile
 from delivery_review.source_snapshot import materialize_snapshot
 from delivery_review.test_evidence import (EventSourceFact, ProducerQualification, RawApiFact,
-    TestEvidenceInputs, bind_test_evidence, event_source_identity)
+    TestEvidenceInputs, bind_test_evidence, event_source_identity, merge_reference_identity)
 from observation_fixtures import BASE, HEAD, NOW, CaptureFixture
 from test_github_attestation import authored_bundle, control as attestation_control
 from test_source_snapshot import fixture
@@ -158,6 +158,18 @@ class TestEvidenceBindingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.fixture = AuthoredInspection(Path(self.temp.name))
 
+    def merge_event(self, *, parents=None):
+        snapshot = self.fixture.snapshot
+        value = self.fixture.objects
+        merge = value.commit(value.files({"README.txt": b"authored merge-reference control"}),
+            [snapshot.base_tip_sha, snapshot.head_sha] if parents is None else parents)
+        payload = {"ref": "refs/pull/7/merge", "node_id": "authored", "url":
+            "https://api.github.com/repos/fixture-owner/fixture-repo/git/refs/pull/7/merge",
+            "object": {"type": "commit", "sha": merge,
+                "url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + merge}}
+        reference = fact("/repos/fixture-owner/fixture-repo/git/ref/pull/7/merge", payload)
+        return EventSourceFact(value.objects[merge], reference), merge, payload
+
     def test_authored_chain_binds_only_after_all_independent_inputs(self):
         first = bind_test_evidence(**self.fixture.args())
         self.assertEqual("untrusted", first.obligation["outcome"])
@@ -189,6 +201,97 @@ class TestEvidenceBindingTests(unittest.TestCase):
             self.fixture.metadata = deepcopy(original)
             mutate(self.fixture.metadata)
             self.assertNotEqual("satisfied", self.fixture.bound().obligation["outcome"])
+
+    def test_v2_digest_contradiction_blocks_without_reinterpreting_v1(self):
+        self.fixture.metadata["digest"] = "sha256:" + "f" * 64
+        for version, effect in ((1, "clear"), (2, "block")):
+            with self.subTest(profile_version=version):
+                self.fixture.profile["profile_version"] = version
+                self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+                result = self.fixture.bound()
+                self.assertEqual(("error", effect), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertIn("artifact_transport_digest_mismatch", result.obligation["reason_codes"])
+                self.assertEqual(version == 2, "artifact_digest_mismatch" in result.obligation["reason_codes"])
+                self.assertIn(self.fixture.args()["artifact_metadata"].body_bytes, result.raw_files.values())
+                self.assertIn(self.fixture.artifact.archive_bytes, result.raw_files.values())
+
+    def test_v2_generic_absence_or_unconfirmed_app_does_not_become_a_block(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        row = self.fixture.capture_fixture.find("check_run")
+        original = self.fixture.capture_fixture.payload(row)
+        for app in (None, {}, {"id": True}, {"id": "99999"}):
+            with self.subTest(app=app):
+                document = dict(original, app=app)
+                self.fixture.capture_fixture.set_payload(row, document)
+                result = self.fixture.bound(artifact=None)
+                self.assertEqual(("untrusted", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertNotIn("check_app_mismatch", result.obligation["reason_codes"])
+        self.fixture.capture_fixture.set_payload(row, original)
+        for changes in ({"artifact": None}, {"qualification": None}, {"artifact_metadata": None},
+                        {"artifact": None, "archive_bytes": b"authored malformed archive", "artifact_metadata": None}):
+            with self.subTest(changes=tuple(changes)):
+                result = self.fixture.bound(**changes)
+                self.assertNotEqual("satisfied", result.obligation["outcome"])
+                self.assertEqual("clear", result.obligation["effect"])
+
+    def test_v2_damaged_zip_keeps_scoped_platform_digest_contradiction_before_parsing(self):
+        original = self.fixture.artifact.archive_bytes
+        metadata = self.fixture.args()["artifact_metadata"]
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for damaged in (b"X" + original[1:], original[:-1]):
+                with self.subTest(profile_version=version, same_size=len(damaged) == len(original)):
+                    result = self.fixture.bound(artifact=None, archive_bytes=damaged)
+                    self.assertEqual(("error", "block" if version == 2 else "clear"),
+                        (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertEqual(version == 2, "artifact_digest_mismatch" in result.obligation["reason_codes"])
+                    self.assertEqual("reported", result.evidence["binding_level"])
+                    self.assertIsNone(result.diagnostics["attestation_expected"])
+                    self.assertIn(damaged, result.raw_files.values())
+                    self.assertIn(metadata.body_bytes, result.raw_files.values())
+                    if version == 2:
+                        self.assertEqual((7001, digest(damaged)),
+                            (result.evidence["artifact_id"], result.evidence["artifact_sha256"]))
+
+    def test_v2_digest_negative_proof_requires_original_complete_scoped_metadata(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        original = self.fixture.artifact.archive_bytes
+        damaged = b"X" + original[1:]
+        metadata = self.fixture.args()["artifact_metadata"]
+        cases = [None, replace(metadata, request_path=metadata.request_path + "0"),
+                 replace(metadata, status_code=404), replace(metadata, complete=False),
+                 replace(metadata, complete=1), replace(metadata, headers={"authorization": "authored unsafe header"}),
+                 replace(metadata, body_bytes=b"{}"), replace(metadata, body_bytes=b'{"id":7001,"id":7001}')]
+        mutations = (lambda row: row.update(id=True), lambda row: row.update(id="7001"),
+            lambda row: row.update(digest="not-an-algorithm-digest"), lambda row: row.update(size_in_bytes=True),
+            lambda row: row.update(size_in_bytes=-1), lambda row: row.update(size_in_bytes=1.5),
+            lambda row: row.update(name="delivery-review-1001-2-4001"), lambda row: row.update(expired=True),
+            lambda row: row["workflow_run"].update(id=999), lambda row: row["workflow_run"].update(id=True),
+            lambda row: row["workflow_run"].update(head_sha="f" * 40),
+            lambda row: row["workflow_run"].update(repository_id=9002),
+            lambda row: row["workflow_run"].update(head_repository_id=9002))
+        for mutate in mutations:
+            document = deepcopy(self.fixture.metadata)
+            mutate(document)
+            cases.append(replace(metadata, body_bytes=json.dumps(document).encode()))
+        for index, candidate in enumerate(cases):
+            with self.subTest(candidate=index):
+                result = self.fixture.bound(artifact=None, archive_bytes=damaged, artifact_metadata=candidate)
+                self.assertEqual(("error", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                self.assertNotIn("artifact_digest_mismatch", result.obligation["reason_codes"])
+                self.assertIn(damaged, result.raw_files.values())
+        # The later metadata check must also validate scope before it can use
+        # a contradictory digest for an otherwise parseable archive.
+        document = deepcopy(self.fixture.metadata)
+        document["workflow_run"]["id"] = 999
+        document["digest"] = "sha256:" + "f" * 64
+        result = self.fixture.bound(artifact_metadata=fact(metadata.request_path, document))
+        self.assertEqual(("error", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+        self.assertIn("artifact_run_mismatch", result.obligation["reason_codes"])
+        self.assertNotIn("artifact_digest_mismatch", result.obligation["reason_codes"])
 
     def test_api_route_and_completeness_are_checked(self):
         fact_value = self.fixture.args()["artifact_metadata"]
@@ -223,6 +326,58 @@ class TestEvidenceBindingTests(unittest.TestCase):
         self.fixture.junit = self.fixture.xml(passed=1, skipped=1)
         self.fixture.rebuild()
         self.assertEqual("satisfied", self.fixture.bound().obligation["outcome"])
+
+    def test_v2_authenticated_zero_and_all_skipped_counts_block_while_v1_remains_clear(self):
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for skipped, native, reason in ((0, 0, "zero_tests"), (0, 5, "zero_tests"), (3, 0, "all_tests_skipped")):
+                with self.subTest(profile_version=version, skipped=skipped, native=native):
+                    self.fixture.junit = self.fixture.xml(passed=0, skipped=skipped)
+                    self.fixture.receipt["execution"]["test_exit"] = native
+                    self.fixture.rebuild()
+                    result = self.fixture.bound()
+                    self.assertEqual(("missing", "block" if version == 2 else "clear"),
+                        (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertIn(reason, result.obligation["reason_codes"])
+                    self.assertEqual("workflow_bound", result.evidence["binding_level"])
+                    self.assertIn(self.fixture.junit, result.raw_files.values())
+
+    def test_v2_untrusted_zero_or_all_skipped_claims_do_not_gain_count_based_block(self):
+        self.fixture.profile["profile_version"] = 2
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        for skipped, native in ((0, 5), (3, 0)):
+            self.fixture.junit = self.fixture.xml(passed=0, skipped=skipped)
+            self.fixture.receipt["execution"]["test_exit"] = native
+            self.fixture.rebuild()
+            for result in (bind_test_evidence(**self.fixture.args()), self.fixture.bound(qualification=None)):
+                with self.subTest(skipped=skipped, reasons=result.obligation["reason_codes"]):
+                    self.assertEqual(("untrusted", "clear"), (result.obligation["outcome"], result.obligation["effect"]))
+                    self.assertNotIn("zero_tests", result.obligation["reason_codes"])
+                    self.assertNotIn("all_tests_skipped", result.obligation["reason_codes"])
+
+    def test_collection_error_alias_requires_qualified_native_exit_and_specific_junit_phase(self):
+        for version in (1, 2):
+            self.fixture.profile["profile_version"] = version
+            self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+            for native, passed, errors, message, collection in (
+                    (2, 0, 1, "collection failure", True),
+                    (1, 0, 1, "collection failure", False),
+                    (2, 0, 1, "failed on setup", False),
+                    (2, 1, 1, "collection failure", False),
+                    (3, 0, 1, "collection failure", False),
+                    (2, 1, 0, "collection failure", False)):
+                with self.subTest(profile_version=version, native=native, passed=passed, errors=errors, message=message):
+                    self.fixture.junit = self.fixture.xml(passed=passed, errors=errors).replace(
+                        b'<error message="authored">', ('<error message="' + message + '">').encode())
+                    self.fixture.receipt["execution"]["test_exit"] = native
+                    self.fixture.rebuild()
+                    result = self.fixture.bound()
+                    self.assertEqual(version == 2 and collection,
+                        "pytest_collection_error" in result.obligation["reason_codes"])
+                    self.assertEqual("block", result.obligation["effect"])
+                    self.assertEqual("failed" if errors else "error", result.obligation["outcome"])
+                    self.assertIsNone(self.fixture.receipt["execution"]["collection_exit"])
 
     def test_missing_or_retargeted_reusable_workflow_is_untrusted(self):
         row = self.fixture.capture_fixture.find("attempt")
@@ -273,6 +428,137 @@ class TestEvidenceBindingTests(unittest.TestCase):
         bad = value.commit(value.files({"README.txt": b"wrong merge"}), [self.fixture.snapshot.head_sha, self.fixture.snapshot.base_tip_sha])
         result = self.fixture.bound(event_source=EventSourceFact(value.objects[bad]))
         self.assertIn("event_merge_parent_mismatch", result.obligation["reason_codes"])
+
+    def test_merge_reference_binds_omitted_pr_field_and_retains_original_bytes(self):
+        event, merge, payload = self.merge_event()
+        event = replace(event, reference=replace(event.reference,
+            body_bytes=b" \n" + json.dumps(payload, indent=2).encode() + b"\n"))
+        for phase in ("initial", "final"):
+            row = self.fixture.capture_fixture.find("pull_request", phase)
+            document = self.fixture.capture_fixture.payload(row)
+            document.pop("merge_commit_sha")
+            self.fixture.capture_fixture.set_payload(row, document)
+        before = dict(self.fixture.capture_fixture.bodies)
+        result = self.fixture.bound(event_source=event, event_source_basis="github_merge_reference_v1")
+        self.assertEqual("satisfied", result.obligation["outcome"], result.diagnostics)
+        self.assertEqual(merge, result.diagnostics["attestation_expected"]["certificate_source_sha"])
+        self.assertEqual(self.fixture.snapshot.head_sha, result.evidence["subject_sha"])
+        self.assertEqual(before, self.fixture.capture_fixture.bodies)
+        retained = next(raw for name, raw in result.raw_files.items() if name.endswith("/event-merge-reference.json"))
+        self.assertEqual(event.reference.body_bytes, retained)
+        request = next(loads_strict(raw) for name, raw in result.raw_files.items()
+            if name.endswith("/event-merge-reference.json.request.json"))
+        self.assertEqual(event.reference.request_path, request["path"])
+        self.assertEqual(200, request["status_code"])
+
+    def test_new_reference_basis_does_not_read_deprecated_pr_merge_field(self):
+        event, merge, unused = self.merge_event()
+        for legacy in (None, "f" * 40, merge):
+            pr = {"number": 7, "merge_commit_sha": legacy}
+            with self.subTest(legacy=legacy):
+                self.assertEqual((merge, [self.fixture.snapshot.base_tip_sha, self.fixture.snapshot.head_sha]),
+                    event_source_identity(event, self.fixture.snapshot, pr, event_source_basis="github_merge_reference_v1"))
+        bad = replace(event, reference=replace(event.reference, request_path=event.reference.request_path + "?fallback=1"))
+        with self.assertRaisesRegex(ContractError, "api_fact_route_mismatch"):
+            event_source_identity(bad, self.fixture.snapshot, {"number": 7, "merge_commit_sha": merge},
+                event_source_basis="github_merge_reference_v1")
+
+    def test_merge_reference_requires_exact_route_status_completeness_and_safe_headers(self):
+        event, unused, payload = self.merge_event()
+        changes = [
+            {"request_path": "/repos/other-owner/fixture-repo/git/ref/pull/7/merge"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/ref/pull/8/merge"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/ref/pull/7/head"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/matching-refs/pull/7/merge"},
+            {"request_path": event.reference.request_path + "?page=1"},
+            {"status_code": 404}, {"status_code": True}, {"complete": False}, {"complete": 1},
+            {"observed_at": "2026-11-06"}, {"headers": {"authorization": "authored unsafe header"}},
+        ]
+        for change in changes:
+            reference = replace(event.reference, **change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                merge_reference_identity(reference, self.fixture.snapshot.repository, 7)
+        bad = replace(event, reference=replace(event.reference, status_code=404))
+        result = self.fixture.bound(event_source=bad, event_source_basis="github_merge_reference_v1")
+        self.assertIsNone(result.diagnostics["attestation_expected"])
+        self.assertNotEqual("satisfied", result.obligation["outcome"])
+        self.assertIn(bad.reference.body_bytes, result.raw_files.values())
+        request = next(loads_strict(raw) for name, raw in result.raw_files.items()
+            if name.endswith("/event-merge-reference.json.request.json"))
+        self.assertEqual(404, request["status_code"])
+
+    def test_merge_reference_rejects_noncommit_ambiguous_json_and_noncanonical_identity(self):
+        event, merge, payload = self.merge_event()
+        changes = [({"ref": "refs/pull/8/merge"}, {}), ({"ref": "refs/heads/merge"}, {}),
+            ({}, {"type": "tag"}), ({}, {"sha": merge[:12]}), ({}, {"sha": merge.upper()}),
+            ({}, {"sha": "g" * 40}), ({}, {"url": "https://api.github.com/repos/other/repo/git/commits/" + merge}),
+            ({}, {"url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + merge + "?x=1"}),
+            ({}, {"url": "https://api.github.com.evil.example/repos/fixture-owner/fixture-repo/git/commits/" + merge})]
+        bodies = [b"[]", b'{"ref":"refs/pull/7/merge","ref":"refs/pull/7/merge","object":{}}']
+        for top, obj in changes:
+            document = deepcopy(payload)
+            document.update(top)
+            document["object"].update(obj)
+            bodies.append(canonical_bytes(document))
+        for raw in bodies:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                merge_reference_identity(replace(event.reference, body_bytes=raw), self.fixture.snapshot.repository, 7)
+        for repository, number in (("fixture-owner/../escape", 7), ("fixture-owner/fixture-repo", True),
+                ("fixture-owner/fixture-repo", 0), ("fixture-owner/fixture-repo", "7")):
+            with self.subTest(repository=repository, number=number), self.assertRaises(ContractError):
+                merge_reference_identity(event.reference, repository, number)
+
+    def test_merge_reference_requires_original_commit_hash_and_exact_ordered_parents(self):
+        event, unused, payload = self.merge_event()
+        snapshot = self.fixture.snapshot
+        for parents in ([snapshot.head_sha, snapshot.base_tip_sha], [snapshot.base_tip_sha],
+                [snapshot.base_tip_sha, snapshot.head_sha, "e" * 40], ["d" * 40, snapshot.head_sha]):
+            bad, unused, unused_payload = self.merge_event(parents=parents)
+            with self.subTest(parents=parents), self.assertRaisesRegex(ContractError, "event_merge_parent_mismatch"):
+                event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+        bad = replace(event, commit_bytes=event.commit_bytes[:-1] + b"!")
+        with self.assertRaisesRegex(ContractError, "event_merge_reference_sha_mismatch"):
+            event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+        head_reference = deepcopy(payload)
+        head_reference["object"].update(sha=snapshot.head_sha,
+            url="https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + snapshot.head_sha)
+        bad = EventSourceFact(self.fixture.objects.objects[snapshot.head_sha],
+            replace(event.reference, body_bytes=canonical_bytes(head_reference)))
+        with self.assertRaisesRegex(ContractError, "event_merge_parent_mismatch"):
+            event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+
+    def test_new_basis_cannot_fall_back_when_event_or_reference_is_missing(self):
+        event, unused, unused_payload = self.merge_event()
+        for supplied in (None, EventSourceFact(self.fixture.objects.objects[self.fixture.snapshot.head_sha]),
+                replace(event, reference=None)):
+            with self.subTest(supplied=supplied):
+                result = self.fixture.bound(event_source=supplied, event_source_basis="github_merge_reference_v1")
+                self.assertEqual("untrusted", result.obligation["outcome"])
+                self.assertIn("event_merge_reference_missing", result.obligation["reason_codes"])
+                self.assertIsNone(result.diagnostics["attestation_expected"])
+        self.assertEqual("satisfied", self.fixture.bound().obligation["outcome"])
+
+    def test_missing_new_reference_keeps_the_independent_ci_block(self):
+        for role in ("jobs", "check_run"):
+            row = self.fixture.capture_fixture.find(role)
+            payload = self.fixture.capture_fixture.payload(row)
+            (payload["jobs"][0] if role == "jobs" else payload)["conclusion"] = "failure"
+            self.fixture.capture_fixture.set_payload(row, payload)
+        result = self.fixture.bound(artifact=None, event_source_basis="github_merge_reference_v1")
+        self.assertEqual("untrusted", result.obligation["outcome"])
+        self.assertEqual("block", result.obligation["effect"])
+        self.assertEqual({"artifact_missing", "event_merge_reference_missing"}, set(result.obligation["reason_codes"]))
+        self.assertIsNone(result.diagnostics["attestation_expected"])
+
+    def test_explicit_event_source_basis_rejects_unknown_or_mixed_interpretations(self):
+        self.assertEqual("legacy_pr_field_v1", TestEvidenceInputs().event_source_basis)
+        for basis in ("unknown_v2", None, 2):
+            with self.subTest(basis=basis), self.assertRaisesRegex(ContractError, "event_source_basis_unsupported"):
+                bind_test_evidence(**self.fixture.args(event_source_basis=basis))
+        event, unused, unused_payload = self.merge_event()
+        result = self.fixture.bound(event_source=event, event_source_basis="legacy_pr_field_v1")
+        self.assertIn("event_source_basis_reference_conflict", result.obligation["reason_codes"])
+        self.assertIsNone(result.diagnostics["attestation_expected"])
 
     def test_mutated_source_and_unapproved_profile_are_rejected_before_composition(self):
         profile = deepcopy(self.fixture.profile)

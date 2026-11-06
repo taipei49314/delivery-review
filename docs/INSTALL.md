@@ -96,8 +96,11 @@ delivery-review policy verify profile-for-review.json
 
 Both commands explicitly report `approval: not_established`. A seal is a digest
 identity, not a signature or approval. Review all selectors independently of the
-PR before authorizing use. The synthetic example is under `examples/inspection`;
-its IDs and producer revision must not be used as real approved identities.
+PR before authorizing use. Use `examples/inspection/profile-v2.json` as the current
+synthetic format example; its IDs and producer revision must not be used as real
+approved identities. The original `profile.json` stays a historical v1 example.
+See [SPEC-010](specs/SPEC-010-inspection-profile-v2.md) for explicit versioning,
+matrix runtime proof, ledger declarations and proposed-policy observations.
 
 Observation-only commands still take the separate SPEC-001 observation profile:
 

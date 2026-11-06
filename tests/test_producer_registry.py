@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from delivery_review.contracts import ContractError, canonical_bytes
+from delivery_review.contracts import ContractError, canonical_bytes, loads_strict
 from delivery_review.producer_registry import qualified_producer
 
 
@@ -46,9 +46,22 @@ class ProducerRegistryTests(unittest.TestCase):
             result = qualified_producer(selector)
         return result, calls
 
-    def test_real_registry_empty_and_environment_cannot_award_qualification(self):
+    def test_environment_cannot_award_unregistered_producer_qualification(self):
         with patch.dict(os.environ, {"DELIVERY_REVIEW_QUALIFIED_PRODUCER": "true", "GITHUB_TOKEN": "authored-secret"}):
             self.assertIsNone(qualified_producer(SELECTOR))
+
+    def test_release_resources_admit_only_exact_reviewed_paths_modes_and_runtime(self):
+        for filename, mode in (("pytest-producer.yml", "pr_head"), ("pytest-producer-merge.yml", "github_merge")):
+            selector = {"producer_repository_id": 1438021135, "producer_path": ".github/workflows/" + filename,
+                "producer_sha": "3d3e54599066c98f52384c66953b130a01eaaff8"}
+            value = qualified_producer(selector)
+            self.assertIsNotNone(value)
+            self.assertEqual((mode,), value.source_modes)
+            receipt_value = loads_strict(value.qualification_receipt_bytes)
+            self.assertEqual({"python": "3.11.16", "implementation": "cpython", "platform": "linux", "architecture": "x86_64"},
+                receipt_value["runtime"])
+            self.assertEqual("95605b33d82da5c11da7d04ca2543ab18a2b3e8fdb2beff35601f1e1d44b6e90", receipt_value["evidence"]["sha256"])
+            self.assertIsNone(qualified_producer(dict(selector, producer_sha="f" * 40)))
 
     def test_exact_bundled_resource_identity_and_digest_are_required(self):
         files = resources(receipt())

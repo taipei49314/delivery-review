@@ -8,6 +8,9 @@ import re
 
 from .contracts import canonical_bytes, canonical_digest, loads_strict, require, validate_policy
 from .observation_profile import load_observation_profile
+from .job_matrix import platform_job_name, validate_mapping
+from .ledger_input import validate_declaration
+from .policy_change import validate_declaration as validate_policy_input
 from .resources import definition_bytes
 
 KIND = "delivery-review-inspection-profile"
@@ -22,14 +25,18 @@ def _identity(profile):
 
 
 def _validate(profile, *, check_identity):
-    require(type(profile) is dict and set(profile) == FIELDS, "invalid_inspection_profile_fields")
+    require(type(profile) is dict and FIELDS <= set(profile), "invalid_inspection_profile_fields")
     require(profile["kind"] == KIND and type(profile["profile_version"]) is int and
-            profile["profile_version"] == 1, "unsupported_inspection_profile")
+            profile["profile_version"] in {1, 2}, "unsupported_inspection_profile")
+    optional = {"job_matrix", "ledger_input", "policy_input"} if profile["profile_version"] == 2 else set()
+    require(FIELDS <= set(profile) and set(profile) <= FIELDS | optional, "invalid_inspection_profile_fields")
     require(type(profile["name"]) is str and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", profile["name"]),
             "invalid_inspection_profile_name")
     policy = profile["policy"]
     validate_policy(policy)
     github = load_observation_profile(canonical_bytes(profile["github"]))
+    if "ledger_input" in profile:
+        validate_declaration(profile["ledger_input"])
     require(policy["repository_id"] == github["repository"]["id"], "profile_repository_mismatch")
     require(policy["origin"] == {"kind": "external_file", "revision": None},
             "inspection_profile_requires_external_policy")
@@ -46,6 +53,13 @@ def _validate(profile, *, check_identity):
         if name == "ledgerwash":
             require(type(item["require_complete"]) is bool, "invalid_engine_options")
     requirements = policy["requirements"]
+    changes = [row for row in requirements if row["kind"] == "policy_change"]
+    require((len(changes) == 1) == ("policy_input" in profile) and len(changes) <= 1,
+            "policy_input_requirement_mismatch")
+    if "policy_input" in profile:
+        validate_policy_input(profile["policy_input"])
+    if profile["profile_version"] == 2:
+        validate_mapping(profile)
     scanners = {item["selector"].get("engine") for item in requirements
                 if item["kind"] == "scanner" and item["required"]}
     require({"checkwash", "pinwash"} <= scanners, "required_static_engines_missing")
@@ -59,6 +73,10 @@ def _validate(profile, *, check_identity):
     require(type(producers) is dict and set(producers) == set(tests), "producer_inventory_mismatch")
     for requirement in requirements:
         selector = requirement["selector"]
+        if requirement["kind"] == "policy_change":
+            require(profile["profile_version"] == 2 and selector == {} and requirement["minimum_binding"] == "reported",
+                    "unsupported_policy_change_selector")
+            continue
         if requirement["kind"] == "source":
             require(selector == {} and requirement["minimum_binding"] == "reported", "unsupported_source_selector")
             continue
@@ -68,12 +86,16 @@ def _validate(profile, *, check_identity):
             continue
         require(requirement["kind"] in {"test_report", "ci_job"}, "unsupported_requirement_kind")
         required = {"workflow_id", "app_id", "job_name"}
-        require(required <= selector.keys() and "matrix" not in selector, "unsupported_job_selector")
+        require(required <= selector.keys() and ("matrix" not in selector or profile["profile_version"] == 2),
+                "unsupported_job_selector")
+        if "matrix" in selector:
+            required.add("matrix")
+        observed_name = platform_job_name(profile, requirement)
         workflow = workflows.get(selector["workflow_id"])
         require(workflow is not None and workflow["app_id"] == selector["app_id"] and
-                selector["job_name"] in workflow["job_names"], "profile_job_selector_mismatch")
+                observed_name in workflow["job_names"], "profile_job_selector_mismatch")
         used_workflows.add(workflow["id"])
-        used_jobs[workflow["id"]].add(selector["job_name"])
+        used_jobs[workflow["id"]].add(observed_name)
         if requirement["kind"] == "ci_job":
             require(set(selector) == required and requirement["minimum_binding"] == "platform_bound",
                     "unsupported_ci_selector")

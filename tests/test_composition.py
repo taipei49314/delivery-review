@@ -2,11 +2,13 @@
 from copy import deepcopy
 from dataclasses import replace
 import json
+import io
 from pathlib import Path
 import sys
 import tempfile
 from types import MappingProxyType
 import unittest
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +21,7 @@ from delivery_review.inspection_profile import seal_inspection_profile
 from delivery_review.reporting import render_report_html, render_report_markdown
 from delivery_review.test_evidence import EventSourceFact, TestEvidenceInputs, bind_test_evidence
 from test_engine_adapters import SUBJECT, control, raw
-from test_test_evidence import AuthoredInspection, digest
+from test_test_evidence import AuthoredInspection, digest, fact
 
 
 def authored_engine(fixture, name, *, block=False, exit_code=None, termination="exited", malformed=False,
@@ -98,6 +100,121 @@ class CompositionTests(unittest.TestCase):
         for entry in result.report["raw_inventory"]:
             self.assertEqual(entry["sha256"], digest(result.raw_files[entry["path"]]))
         self.assertIn("known_checkwash_419_escape", result.report["limitations"])
+
+    def test_v2_frozen_negative_dispositions_are_derived_from_original_api_and_archive_bytes(self):
+        """Authored raw controls exercise the real binder, not saved verdicts."""
+        cases = ("E07-required-timeout", "E07-required-skipped", "E07-required-neutral", "E07-required-cancelled",
+                 "E08-wrong-check-app", "E08-ambiguous-same-name", "E10-artifact-digest-mismatch",
+                 "E10-cross-attempt-receipt", "E10-self-consistent-untrusted-producer",
+                 "E16-archive-traversal", "E16-xml-entity")
+        for version in (1, 2):
+            for case_id in cases:
+                with self.subTest(profile_version=version, case_id=case_id):
+                    case_root = Path(self.temp.name) / (str(version) + case_id)
+                    case_root.mkdir()
+                    fixture = AuthoredInspection(case_root)
+                    fixture.profile["profile_version"] = version
+                    fixture.profile_bytes = seal_inspection_profile(fixture.profile)
+                    inputs = fixture.inputs()
+                    retained = []
+                    if case_id.startswith("E07-"):
+                        conclusion = {"timeout": "timed_out"}.get(case_id.rsplit("-", 1)[1], case_id.rsplit("-", 1)[1])
+                        for role in ("jobs", "check_run"):
+                            row = fixture.capture_fixture.find(role)
+                            payload = fixture.capture_fixture.payload(row)
+                            (payload["jobs"][0] if role == "jobs" else payload).update(status="completed", conclusion=conclusion)
+                            fixture.capture_fixture.set_payload(row, payload)
+                            retained.append(fixture.capture_fixture.bodies[row["body"]["path"]])
+                        inputs = replace(inputs, artifact=None, attestation=None)
+                    elif case_id == "E08-wrong-check-app":
+                        row = fixture.capture_fixture.find("check_run")
+                        payload = fixture.capture_fixture.payload(row)
+                        payload["app"]["id"] = 99999
+                        fixture.capture_fixture.set_payload(row, payload)
+                        retained.append(fixture.capture_fixture.bodies[row["body"]["path"]])
+                    elif case_id == "E08-ambiguous-same-name":
+                        row = fixture.capture_fixture.find("jobs")
+                        payload = fixture.capture_fixture.payload(row)
+                        second = dict(payload["jobs"][0], id=2002,
+                            check_run_url="https://api.github.com/repos/fixture-owner/fixture-repo/check-runs/4002")
+                        payload["jobs"].append(second)
+                        payload["total_count"] = 2
+                        fixture.capture_fixture.set_payload(row, payload)
+                        check = fixture.capture_fixture.payload(fixture.capture_fixture.find("check_run"))
+                        fixture.capture_fixture.add("check_run", dict(check, id=4002), job_id=2002, check_run_id=4002)
+                        retained.append(fixture.capture_fixture.bodies[row["body"]["path"]])
+                    elif case_id == "E10-artifact-digest-mismatch":
+                        metadata = dict(fixture.metadata, digest="sha256:" + "f" * 64)
+                        inputs = replace(inputs, artifact_metadata=fact(inputs.artifact_metadata.request_path, metadata))
+                        retained.extend((inputs.artifact_metadata.body_bytes, fixture.artifact.archive_bytes))
+                    elif case_id == "E10-cross-attempt-receipt":
+                        fixture.receipt["producer"]["attempt"] = 2
+                        fixture.rebuild()
+                        metadata = dict(fixture.metadata, name="delivery-review-1001-2-4001")
+                        inputs = replace(inputs, artifact=fixture.artifact,
+                            artifact_metadata=fact(inputs.artifact_metadata.request_path, metadata))
+                        retained.append(fixture.artifact.archive_bytes)
+                    elif case_id == "E10-self-consistent-untrusted-producer":
+                        row = fixture.capture_fixture.find("attempt")
+                        payload = fixture.capture_fixture.payload(row)
+                        payload["referenced_workflows"] = []
+                        fixture.capture_fixture.set_payload(row, payload)
+                        retained.append(fixture.capture_fixture.bodies[row["body"]["path"]])
+                    else:
+                        xml = (b'<!DOCTYPE testsuites [<!ENTITY secret SYSTEM "file:///authored-sentinel">]>' + fixture.junit
+                               if case_id == "E16-xml-entity" else fixture.junit)
+                        stream = io.BytesIO()
+                        with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+                            archive.writestr("receipt.json", canonical_bytes(fixture.receipt))
+                            archive.writestr("junit.xml", xml)
+                            if case_id == "E16-archive-traversal":
+                                archive.writestr("../authored-escape", b"must never be materialized")
+                        candidate = stream.getvalue()
+                        metadata = dict(fixture.metadata, digest="sha256:" + digest(candidate), size_in_bytes=len(candidate))
+                        inputs = replace(inputs, artifact=None, archive_bytes=candidate,
+                            artifact_metadata=fact(inputs.artifact_metadata.request_path, metadata))
+                        retained.append(candidate)
+                    result = compose_report(profile_bytes=fixture.profile_bytes, capture=fixture.capture_fixture.seal(),
+                        snapshot=fixture.snapshot, engine_executions={name: authored_engine(fixture, name)
+                            for name in ("checkwash", "pinwash", "ledgerwash")}, test_inputs={"pytest-linux": inputs},
+                        report_id="authored-negative-" + case_id, mode="live")
+                    frozen = json.loads((ROOT / "fixtures/cases" / (case_id + ".json")).read_bytes())["expected"]
+                    state = dict(frozen["state"])
+                    if version == 1:
+                        state["policy"] = "clear"
+                        if case_id in {"E10-cross-attempt-receipt", "E10-self-consistent-untrusted-producer"}:
+                            state["evidence"] = "error"
+                    self.assertEqual(state, result.report["state"])
+                    self.assertEqual(frozen["exit_code"], result.report["exit_code"])
+                    self.assertFalse(result.report["ready_for_review"])
+                    if version == 2:
+                        reasons = {reason for row in result.report["obligations"] for reason in row["reason_codes"]}
+                        self.assertLessEqual(set(frozen["reason_codes"]), reasons)
+                    for raw_bytes in retained:
+                        self.assertIn(raw_bytes, result.raw_files.values())
+
+    def test_v2_ci_timeout_and_wrong_app_use_the_same_confirmed_dispositions(self):
+        self.fixture.profile["profile_version"] = 2
+        test = self.fixture.profile["policy"]["requirements"][0]
+        self.fixture.profile["policy"]["requirements"].append({"id": "ci", "kind": "ci_job", "required": True,
+            "minimum_binding": "platform_bound", "selector": {key: test["selector"][key]
+                for key in ("workflow_id", "app_id", "job_name")}})
+        self.fixture.profile_bytes = seal_inspection_profile(self.fixture.profile)
+        for conclusion, app_id, outcome, reason in (("timed_out", 15368, "missing", "required_job_timeout"),
+                                                    ("success", 99999, "mismatch", "check_app_mismatch")):
+            with self.subTest(conclusion=conclusion, app_id=app_id):
+                for role in ("jobs", "check_run"):
+                    row = self.fixture.capture_fixture.find(role)
+                    payload = self.fixture.capture_fixture.payload(row)
+                    target = payload["jobs"][0] if role == "jobs" else payload
+                    target.update(status="completed", conclusion=conclusion)
+                    if role == "check_run":
+                        target["app"]["id"] = app_id
+                    self.fixture.capture_fixture.set_payload(row, payload)
+                result = self.compose(test_inputs={})
+                obligation = next(row for row in result.report["obligations"] if row["id"] == "ci")
+                self.assertEqual((outcome, "block"), (obligation["outcome"], obligation["effect"]))
+                self.assertIn(reason, obligation["reason_codes"])
 
     def test_offline_same_inputs_preserve_evidence_policy_and_time_but_never_freshness(self):
         first = self.compose()

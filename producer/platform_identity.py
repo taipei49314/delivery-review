@@ -10,18 +10,26 @@ import re
 import urllib.parse
 
 from delivery_review.contracts import canonical_bytes, loads_strict
-from delivery_review.providers.github_routes import API_VERSION, next_page, positive, sha
+from delivery_review.providers.github_routes import (ACQUISITION_ERRORS, API_VERSION, next_page, positive, sha,
+                                                     validate_response_headers)
 from .bootstrap import (PRODUCER_REPOSITORY, PRODUCER_REPOSITORY_ID, PRODUCER_PATH,
                         BootstrapError, number, require, producer_path)
 
 APP_ID = 15368
+PLATFORM_FAILURE_CODES = frozenset({'producer_source_mode_mismatch', 'platform_repository_mismatch',
+    'producer_repository_mismatch', 'platform_pr_mismatch', 'platform_source_missing', 'fork_source_unsupported',
+    'event_source_ref_mismatch', 'platform_run_mismatch', 'producer_reference_missing',
+    'producer_reference_unconfirmed', 'platform_attempt_mismatch', 'ambiguous_job_inventory',
+    'job_check_relation_unconfirmed', 'platform_job_attempt_mismatch', 'platform_job_mismatch',
+    'platform_check_mismatch', 'platform_job_url_mismatch'})
 
 
 def artifact_name(identity):
     return 'delivery-review-' + '-'.join(str(identity[key]) for key in ('run_id', 'run_attempt', 'check_run_id'))
 
 
-def derive_identity(claims, *, repository, producer_repository, pull_request, run, attempt, jobs, check, source_mode='pr_head'):
+def derive_identity(claims, *, repository, producer_repository, pull_request, merge_ref,
+                    run, attempt, jobs, check, source_mode='pr_head'):
     """Pure consistency boundary. Network provenance belongs to collect_identity."""
     repo_id, run_id, attempt_id, check_id = (number(claims[key]) for key in
                                            ('repository_id', 'run_id', 'run_attempt', 'check_run_id'))
@@ -41,7 +49,17 @@ def derive_identity(claims, *, repository, producer_repository, pull_request, ru
             'platform_source_missing')
     require(all(type(side.get('repo')) is dict and positive(side['repo'].get('id')) and side['repo'].get('id') == repo_id
                 and side['repo'].get('full_name') == name for side in (head, base)), 'fork_source_unsupported')
-    require(pull_request.get('merge_commit_sha') == claims['sha'], 'event_source_changed')
+    # API 2026-03-10 removed merge_commit_sha from PR payloads. Independently
+    # observe the exact platform PR merge ref instead of assuming its identity.
+    expected_ref = f'refs/pull/{pr_number}/merge'
+    require(type(merge_ref) is dict and claims['ref'] == expected_ref and merge_ref.get('ref') == expected_ref
+            and merge_ref.get('url') == f'https://api.github.com/repos/{name}/git/{expected_ref}'
+            and type(merge_ref.get('object')) is dict and merge_ref['object'].get('type') == 'commit'
+            and sha(merge_ref['object'].get('sha')) and merge_ref['object']['sha'] == claims['sha']
+            and merge_ref['object'].get('url') == f'https://api.github.com/repos/{name}/git/commits/{claims["sha"]}',
+            'event_source_ref_mismatch')
+    # Deprecated PR merge_commit_sha is not a live source of identity. Historical
+    # capture replay is a separate verifier path; no field is synthesized here.
     for value in (run, attempt):
         require(positive(value.get('id')) and positive(value.get('run_attempt'))
                 and value.get('id') == run_id and value.get('run_attempt') == attempt_id
@@ -99,21 +117,41 @@ def collect_identity(claims, *, transport, destination: Path, source_mode='pr_he
     def get(label, path):
         nonlocal total
         require(len(records) < 24 and total < 8 * 1024 * 1024, 'platform_capture_limit')
-        response = transport.get(path, api_version=API_VERSION, max_bytes=min(1024 * 1024, 8 * 1024 * 1024 - total),
+        require(label in {'repository', 'producer_repository', 'pull_request', 'merge_ref', 'run', 'attempt', 'check'}
+                or label in {'jobs-' + str(page) for page in range(1, 11)}, 'invalid_platform_record_label')
+        maximum = min(1024 * 1024, 8 * 1024 * 1024 - total)
+        response = transport.get(path, api_version=API_VERSION, max_bytes=maximum,
                                  timeout_seconds=20)
-        require(response['status_code'] == 200 and response['complete'] is True and response['error'] is None
-                and type(response['body']) is bytes, 'platform_response_unavailable')
         raw = response['body']
-        total += len(raw)
-        (destination / (label + '.json')).write_bytes(raw)
-        records.append({'path': path, 'file': label + '.json', 'sha256': hashlib.sha256(raw).hexdigest(),
-                        'size_bytes': len(raw), 'status_code': 200, 'response_headers': response['response_headers']})
+        status, error = response['status_code'], response['error']
+        require((status is None or type(status) is int and 100 <= status <= 599)
+                and type(response['complete']) is bool
+                and (error is None or type(error) is dict and set(error) == {'code'}
+                     and type(error['code']) is str and error['code'] in ACQUISITION_ERRORS)
+                and (raw is None or type(raw) is bytes and len(raw) <= maximum), 'invalid_platform_response')
+        headers = validate_response_headers(response['response_headers'])
+        if raw is not None:
+            total += len(raw)
+            (destination / (label + '.json')).write_bytes(raw)
+        record = {'path': path, 'file': None if raw is None else label + '.json',
+            'sha256': None if raw is None else hashlib.sha256(raw).hexdigest(),
+            'size_bytes': None if raw is None else len(raw), 'status_code': status,
+            'response_headers': headers, 'complete': response['complete'], 'error': error}
+        records.append(record)
+        (destination / (label + '.response.json')).write_bytes(canonical_bytes(record) + b'\n')
+        if status != 200 or response['complete'] is not True or error is not None or raw is None:
+            # Labels/codes are closed sets, status is a validated integer. Never
+            # emit response bodies, exception text, credentials or API URLs.
+            code = 'none' if error is None else error['code']
+            print(f'delivery-review: platform response refused route={label} status={status} code={code}', flush=True)
+            raise BootstrapError('platform_response_unavailable')
         return loads_strict(raw), response['response_headers']
     base = '/repos/' + claims['repository']
     run_id, attempt_id = number(claims['run_id']), number(claims['run_attempt'])
     values = {}
     routes = {'repository': base, 'producer_repository': '/repos/' + PRODUCER_REPOSITORY,
               'pull_request': base + '/pulls/' + claims['ref'].split('/')[2],
+              'merge_ref': base + '/git/ref/pull/' + claims['ref'].split('/')[2] + '/merge',
               'run': base + '/actions/runs/' + str(run_id),
               'attempt': base + f'/actions/runs/{run_id}/attempts/{attempt_id}',
               'check': base + '/check-runs/' + str(number(claims['check_run_id']))}
@@ -130,6 +168,12 @@ def collect_identity(claims, *, transport, destination: Path, source_mode='pr_he
         jobs.extend(value['jobs'])
         page = next_page(headers, path, max_pages=10)
     require(len(jobs) == total_count, 'job_pagination_incomplete')
-    identity = derive_identity(claims, jobs=jobs, source_mode=source_mode, **values)
+    try:
+        identity = derive_identity(claims, jobs=jobs, source_mode=source_mode, **values)
+    except BootstrapError as error:
+        code = str(error) if str(error) in PLATFORM_FAILURE_CODES else 'platform_identity_refused'
+        (destination / 'failure.json').write_bytes(canonical_bytes({'code': code}) + b'\n')
+        print('delivery-review: platform identity refused code=' + code, flush=True)
+        raise
     (destination / 'manifest.json').write_bytes(canonical_bytes({'records': records, 'identity': identity}) + b'\n')
     return identity

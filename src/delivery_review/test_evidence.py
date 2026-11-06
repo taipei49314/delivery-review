@@ -21,6 +21,7 @@ from .adapters.pytest_junit import JUnitError, parse_pytest_junit
 from .contracts import ContractError, canonical_bytes, loads_strict, require, validate_receipt
 from .evidence.capture import VerifiedCapture, parse_capture
 from .inspection_profile import load_inspection_profile
+from .job_matrix import platform_job_name, qualified_matrix
 from .providers.github_observations import map_capture
 from .providers.github_routes import next_page, positive, validate_response_headers
 from .source_snapshot import SourceSnapshot, verify_snapshot, _commit
@@ -38,8 +39,9 @@ class RawApiFact:
 
 @dataclass(frozen=True)
 class EventSourceFact:
-    """Canonical Git object bytes (``commit <size>\\0<payload>``)."""
+    """Canonical Git commit bytes and an optional original merge-ref API fact."""
     commit_bytes: bytes
+    reference: RawApiFact | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,9 @@ class TestEvidenceInputs:
     attestation_retention: attest.AttestationExecution | None = None
     event_source: EventSourceFact | None = None
     qualification: ProducerQualification | None = None
+    event_source_basis: str = "legacy_pr_field_v1"
+    artifact_capture: object | None = None
+    evidence_selection_basis: str = "legacy_missing_v1"
 
 
 @dataclass(frozen=True)
@@ -150,9 +155,12 @@ def _job_inventory_complete(capture, workflow_id, run_id, attempt):
         return False
 
 
-def selected_job(observations, requirement, capture):
+def selected_job(observations, requirement, capture, profile=None, *, evidence_selection_basis="legacy_missing_v1"):
     """Never replace a selected untrusted/pending run with an older success."""
+    _evidence_selection_basis(evidence_selection_basis)
     selector = requirement["selector"]
+    decision_v2 = profile is not None and profile["profile_version"] == 2
+    selected_name = platform_job_name(profile, requirement) if profile is not None else selector["job_name"]
     workflow = next((row for row in observations["workflows"] if row["workflow_id"] == selector["workflow_id"]), None)
     if workflow is None or workflow["selection"].get("status") != "selected":
         return workflow, None, "missing", ["required_workflow_unavailable"]
@@ -160,11 +168,50 @@ def selected_job(observations, requirement, capture):
         return workflow, None, "untrusted", ["selected_attempt_unconfirmed"]
     if not _job_inventory_complete(capture, workflow["workflow_id"], workflow["selection"]["run_id"], workflow["selection"]["attempt"]):
         return workflow, None, "untrusted", ["job_pagination_unconfirmed"]
-    candidates = [row for row in workflow["jobs"] if row["name"] == selector["job_name"]]
-    match = next((row for row in workflow["expected_jobs"] if row["name"] == selector["job_name"]), None)
+    candidates = [row for row in workflow["jobs"] if row["name"] == selected_name]
+    match = next((row for row in workflow["expected_jobs"] if row["name"] == selected_name), None)
     if len(candidates) != 1 or match is None:
-        return workflow, None, "missing" if not candidates else "untrusted", ["required_job_missing" if not candidates else "required_job_ambiguous"]
+        missing = "required_matrix_cell_missing" if decision_v2 and selector.get("matrix") else "required_job_missing"
+        ambiguous = "ambiguous_check_identity" if decision_v2 else "required_job_ambiguous"
+        return workflow, None, "missing" if not candidates else "untrusted", [missing if not candidates else ambiguous]
     job = candidates[0]
+    check = job.get("check")
+    allowed_reasons = {"check_app_id_mismatch", "listing_pr_association_resolved"}
+    if decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1":
+        # Mapper 2 retains the listing's original omission even after separate
+        # run and attempt bodies resolve it. Admit that residual reason only
+        # with the exact independently resolved, selected-execution proof.
+        selection = workflow["selection"]
+        listing = selection.get("listing_association", {})
+        details = [workflow.get("run"), workflow.get("attempt")]
+        if (capture.manifest["mapper_version"] == 2 and listing.get("status") == "unconfirmed"
+                and listing.get("resolution") == "resolved"
+                and listing.get("reasons") == ["pr_association_unconfirmed"]
+                and all(type(detail) is dict and detail.get("association") == "matched"
+                    and detail.get("native_state") == "observed" and detail.get("reasons") == []
+                    and detail.get("id") == selection["run_id"]
+                    and detail.get("run_attempt") == selection["attempt"]
+                    and detail.get("run_number") == selection["run_number"]
+                    and detail.get("workflow_id") == workflow["workflow_id"]
+                    and detail.get("head_sha") == observations["subject"]["head_sha"]
+                    for detail in details)):
+            refs = sorted(set(details[0]["raw_refs"] + details[1]["raw_refs"]))
+            records = [row for row in capture.manifest["records"] if row["id"] in refs]
+            if (listing.get("resolved_by") == refs and len(records) == 2
+                    and {row["role"] for row in records} == {"run", "attempt"}
+                    and all(row["phase"] == "initial" and row["workflow_id"] == workflow["workflow_id"]
+                        and row["run_id"] == selection["run_id"] and row["status_code"] == 200
+                        and row["error"] is None and row["body"] is not None and row["body"]["complete"]
+                        and row["attempt"] == (selection["attempt"] if row["role"] == "attempt" else None)
+                        for row in records)):
+                allowed_reasons.add("pr_association_unconfirmed")
+    # A specific, independently observed contradiction is different from an
+    # unresolved association. Keep all other identity failures untrusted.
+    if (decision_v2 and check is not None and positive(check.get("app_id"))
+            and check["app_id"] != selector["app_id"]
+            and "check_app_id_mismatch" in job["reasons"]
+            and set(workflow["reasons"]) <= allowed_reasons):
+        return workflow, job, "mismatch", ["check_app_mismatch"]
     if (workflow["association"] != "matched" or job["association"] != "matched" or match["status"] != "matched"
             or job.get("check") is None or job["check"].get("app_id") != selector["app_id"]):
         return workflow, job, "untrusted", ["platform_execution_unconfirmed"]
@@ -197,7 +244,64 @@ def _api(fact, expected_path):
     return loads_strict(fact.body_bytes)
 
 
-def event_source_identity(event_source, snapshot, pr):
+def _scoped_artifact_metadata(fact, snapshot, observations, evidence, job):
+    """Validate the platform fact before using its digest as negative evidence."""
+    require(type(fact) is RawApiFact and type(fact.body_bytes) is bytes, "api_fact_missing")
+    meta = loads_strict(fact.body_bytes)
+    artifact_id = meta.get("id") if type(meta) is dict else None
+    require(positive(artifact_id), "artifact_identity_missing")
+    meta = _api(fact, "/repos/" + snapshot.repository + "/actions/artifacts/" + str(artifact_id))
+    require(type(meta.get("digest")) is str and re.fullmatch(r"sha256:[0-9a-f]{64}", meta["digest"])
+            and type(meta.get("size_in_bytes")) is int and 0 <= meta["size_in_bytes"] <= 2**53 - 1,
+            "artifact_metadata_invalid")
+    require(meta.get("expired") is False
+            and meta.get("name") == f"delivery-review-{evidence['run_id']}-{evidence['attempt']}-{job['check']['id']}",
+            "artifact_locator_mismatch")
+    run = meta.get("workflow_run")
+    require(type(run) is dict and positive(run.get("id")) and run["id"] == evidence["run_id"]
+            and run.get("head_sha") == snapshot.head_sha and positive(run.get("repository_id"))
+            and run["repository_id"] == observations["subject"]["repository_id"]
+            and positive(run.get("head_repository_id"))
+            and run["head_repository_id"] == observations["subject"]["head_repository_id"], "artifact_run_mismatch")
+    return artifact_id, meta
+
+
+def merge_reference_identity(reference, repository, pr_number):
+    """Validate the original fixed-route GitHub merge ref before any Git fetch."""
+    require(type(repository) is str and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+            and all(part not in {".", ".."} for part in repository.split("/")) and positive(pr_number),
+            "event_merge_reference_scope_invalid")
+    path = f"/repos/{repository}/git/ref/pull/{pr_number}/merge"
+    value = _api(reference, path)
+    require(type(value) is dict and value.get("ref") == f"refs/pull/{pr_number}/merge"
+            and type(value.get("object")) is dict, "event_merge_reference_invalid")
+    obj = value["object"]
+    sha = obj.get("sha")
+    require(obj.get("type") == "commit" and type(sha) is str and re.fullmatch(r"[0-9a-f]{40}", sha)
+            and obj.get("url") == f"https://api.github.com/repos/{repository}/git/commits/{sha}",
+            "event_merge_reference_invalid")
+    return sha
+
+
+def _event_source_basis(value):
+    require(type(value) is str and value in {"legacy_pr_field_v1", "github_merge_reference_v1"},
+            "event_source_basis_unsupported")
+
+
+def _evidence_selection_basis(value):
+    require(type(value) is str and value in {"legacy_missing_v1", "scoped_original_refusals_v1"},
+            "unsupported_evidence_selection_basis")
+
+
+def event_source_identity(event_source, snapshot, pr, *, event_source_basis="legacy_pr_field_v1",
+        evidence_selection_basis="legacy_missing_v1"):
+    _event_source_basis(event_source_basis)
+    _evidence_selection_basis(evidence_selection_basis)
+    if event_source_basis == "github_merge_reference_v1":
+        require(type(event_source) is EventSourceFact and type(event_source.reference) is RawApiFact,
+                "event_merge_reference_missing")
+    elif type(event_source) is EventSourceFact:
+        require(event_source.reference is None, "event_source_basis_reference_conflict")
     if event_source is None:
         return snapshot.head_sha, []
     require(type(event_source) is EventSourceFact and type(event_source.commit_bytes) is bytes
@@ -206,6 +310,20 @@ def event_source_identity(event_source, snapshot, pr):
     require(header == b"commit " + str(len(payload)).encode(), "event_source_object_invalid")
     sha = hashlib.sha1(event_source.commit_bytes).hexdigest()
     _, parents = _commit(payload)
+    if event_source.reference is not None:
+        require(type(pr) is dict, "event_merge_reference_scope_invalid")
+        reference_sha = merge_reference_identity(event_source.reference, snapshot.repository, pr.get("number"))
+        require(sha == reference_sha, "event_merge_reference_sha_mismatch")
+        if evidence_selection_basis == "scoped_original_refusals_v1":
+            # Only a canonical object bound to the exact original PR merge ref
+            # can distinguish missing parent proof, unsupported merge shape and
+            # a known contradiction between two observed ordered parents.
+            require(len(parents) >= 2, "event_merge_parent_proof_missing")
+            require(len(parents) == 2, "event_merge_source_unsupported")
+        require(list(parents) == [snapshot.base_tip_sha, snapshot.head_sha], "event_merge_parent_mismatch")
+        return sha, list(parents)
+    # Only historical callers without a separate merge reference may use the
+    # deprecated PR field or the original head-commit shortcut.
     if sha == snapshot.head_sha:
         return sha, []
     require(sha == pr.get("merge_commit_sha") and list(parents) == [snapshot.base_tip_sha, snapshot.head_sha],
@@ -304,13 +422,16 @@ def _attestation_execution(execution, expected, archive):
 
 def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         artifact=None, archive_bytes=None, artifact_metadata=None, producer_repository=None, attestation=None,
-        attestation_retention=None, event_source=None, qualification=None):
+        attestation_retention=None, event_source=None, qualification=None, event_source_basis="legacy_pr_field_v1",
+        artifact_capture=None, evidence_selection_basis="legacy_missing_v1"):
     """Derive one test obligation; missing/untrusted observations stay explicit.
 
     ``diagnostics.attestation_expected`` is available before cryptographic
     execution when sufficient raw claims exist. Run the official verifier with
     that expectation, then call again with its actual AttestationExecution.
     """
+    _event_source_basis(event_source_basis)
+    _evidence_selection_basis(evidence_selection_basis)
     profile, capture, observations = validated_context(profile_bytes, capture, snapshot)
     require(artifact is None or archive_bytes is None, "ambiguous_artifact_input")
     requirements = [row for row in profile["policy"]["requirements"] if row["id"] == requirement_id and row["kind"] == "test_report"]
@@ -323,13 +444,17 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
     def retain(name, raw):
         if type(raw) is bytes:
             files[prefix + name] = raw
-    for name, fact in (("artifact-metadata.json", artifact_metadata), ("producer-repository.json", producer_repository)):
+    for name, fact in (("artifact-metadata.json", artifact_metadata), ("producer-repository.json", producer_repository),
+            ("event-merge-reference.json", event_source.reference if type(event_source) is EventSourceFact else None)):
         if type(fact) is RawApiFact:
             retain(name, fact.body_bytes)
             retain(name + ".request.json", canonical_bytes({"path": fact.request_path, "status_code": fact.status_code,
                 "complete": fact.complete, "observed_at": fact.observed_at, "headers": dict(fact.headers)}) + b"\n")
     if type(event_source) is EventSourceFact:
         retain("event-source.git", event_source.commit_bytes)
+    if event_source_basis == "github_merge_reference_v1" and not (
+            type(event_source) is EventSourceFact and type(event_source.reference) is RawApiFact):
+        problems.append(("untrusted", "event_merge_reference_missing"))
     if type(qualification) is ProducerQualification:
         retain("qualification.json", qualification.qualification_receipt_bytes)
     retained_attestation = _retained_attestation(attestation, attestation_retention)
@@ -337,7 +462,10 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         retain("attestation/verification.json", retained_attestation.manifest_bytes)
         for name, raw in retained_attestation.raw_files.items():
             retain("attestation/" + name + ".bin", raw)
-    workflow, job, initial_outcome, reasons = selected_job(observations, requirement, capture)
+    decision_v2 = profile["profile_version"] == 2
+    scoped_refusals = decision_v2 and evidence_selection_basis == "scoped_original_refusals_v1"
+    workflow, job, initial_outcome, reasons = selected_job(observations, requirement, capture, profile,
+        evidence_selection_basis=evidence_selection_basis)
     problems.extend((initial_outcome, reason) for reason in reasons)
     if workflow is not None:
         evidence.update(workflow_id=workflow["workflow_id"], run_id=workflow["selection"].get("run_id"),
@@ -350,10 +478,32 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             problems.append(("pending", "required_job_pending"))
             evidence.update(status="pending", conclusion="pending")
         elif initial_outcome is None and job["conclusion"] in {"skipped", "neutral", "cancelled", "timed_out", "action_required"}:
-            problems.append(("missing", "required_job_" + job["conclusion"]))
-    effect = "block" if initial_outcome is None and job["native_state"] == "observed" and job["conclusion"] == "failure" else "clear"
+            suffix = "timeout" if decision_v2 and job["conclusion"] == "timed_out" else job["conclusion"]
+            problems.append(("missing", "required_job_" + suffix))
+    effect = "block" if ((initial_outcome is None and job["native_state"] == "observed"
+            and job["conclusion"] in ({"failure", "timed_out"} if decision_v2 else {"failure"}))
+            or decision_v2 and "check_app_mismatch" in reasons) else "clear"
     if artifact is None and archive_bytes is None:
-        problems.append(("pending" if evidence["status"] == "pending" else "missing", "artifact_missing"))
+        refusal = None
+        if scoped_refusals and artifact_capture is not None and initial_outcome is None:
+            from .evidence.artifacts import ArtifactCapture, parse_artifact_capture, map_artifact_capture
+            require(type(artifact_capture) is ArtifactCapture, "invalid_test_artifact_capture")
+            acquisition = parse_artifact_capture(artifact_capture.manifest_bytes, artifact_capture.raw_files)
+            expected = {"repository": {"id": policy["repository_id"], "full_name": snapshot.repository},
+                "run_id": evidence["run_id"], "run_attempt": evidence["attempt"], "check_run_id": job["check"]["id"]}
+            require(_strict_equal(acquisition.manifest["inputs"], expected), "artifact_capture_execution_mismatch")
+            observed = map_artifact_capture(acquisition)
+            # A complete original inventory with multiple matching names is an
+            # identity ambiguity. It is not ordinary absence, and no candidate
+            # may be selected by its order, upload time or apparent contents.
+            if observed["status"] == "ambiguous" and observed["reason_codes"] == ["artifact_ambiguous"]:
+                refusal = ("untrusted", "artifact_ambiguous")
+                retain("artifact-acquisition/capture.json", acquisition.manifest_bytes)
+                for name, data in acquisition.raw_files.items():
+                    retain("artifact-acquisition/" + name, data)
+                diagnostics["artifact_acquisition"] = {"status": "ambiguous", "reason_codes": ["artifact_ambiguous"],
+                    "capture_sha256": _sha(acquisition.manifest_bytes)}
+        problems.append(refusal or ("pending" if evidence["status"] == "pending" else "missing", "artifact_missing"))
     else:
         try:
             if archive_bytes is None:
@@ -361,7 +511,35 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                 archive_bytes = artifact.archive_bytes
             require(type(archive_bytes) is bytes and len(archive_bytes) <= 25 * 1024 * 1024, "artifact_input_limit")
             retain("artifact.zip", archive_bytes)
-            artifact = read_artifact_zip(archive_bytes, policy_limits=policy["limits"])
+            if decision_v2 and initial_outcome is None:
+                try:
+                    scoped_id, scoped_meta = _scoped_artifact_metadata(
+                        artifact_metadata, snapshot, observations, evidence, job)
+                except (ContractError, ValueError, TypeError, KeyError, IndexError):
+                    # An unavailable/unrelated fact cannot establish a digest
+                    # contradiction. Still parse the original archive so an
+                    # independently unsafe ZIP/XML remains observable below.
+                    scoped_meta = None
+                if scoped_meta is not None:
+                    evidence.update(artifact_id=scoped_id, artifact_sha256=_sha(archive_bytes))
+                    require(scoped_meta["digest"] == "sha256:" + evidence["artifact_sha256"]
+                            and scoped_meta["size_in_bytes"] == len(archive_bytes), "artifact_transport_digest_mismatch")
+            try:
+                artifact = read_artifact_zip(archive_bytes, policy_limits=policy["limits"])
+            except ContractError as exc:
+                if not scoped_refusals or str(exc) != "zip_member_inventory_mismatch":
+                    raise
+                # A separate complete validation of the exact singleton dialect
+                # can establish absence only. The strict parser still checks all
+                # paths/types, local headers, physical layout, expansion and CRC.
+                # Extra, duplicate, linked, damaged or oversized members never
+                # become a partial accepted artifact or a missing-JUnit claim.
+                partial = read_artifact_zip(archive_bytes, policy_limits=policy["limits"], expected_paths=("receipt.json",))
+                retain("receipt.json", partial.files["receipt.json"])
+                validate_receipt(loads_strict(partial.files["receipt.json"]))
+                diagnostics["artifact_inventory"] = {"validated_members": ["receipt.json"],
+                    "missing_members": ["junit.xml"], "archive_sha256": partial.archive_sha256}
+                raise ContractError("junit_missing")
             receipt_raw, junit_raw = artifact.files["receipt.json"], artifact.files["junit.xml"]
             retain("receipt.json", receipt_raw)
             retain("junit.xml", junit_raw)
@@ -384,7 +562,8 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                                  {key: observations["subject"][key] for key in ("repository_id", "head_repository_id", "pr_number")}),
                     "receipt_subject_identity_mismatch")
             _, pr = capture_payload(capture, "pull_request")
-            cert_sha, parents = event_source_identity(event_source, snapshot, pr)
+            cert_sha, parents = event_source_identity(event_source, snapshot, pr, event_source_basis=event_source_basis,
+                evidence_selection_basis=evidence_selection_basis if scoped_refusals else "legacy_missing_v1")
             source = receipt["source"]
             expected_source = {"mode": source["mode"], "head_sha": snapshot.head_sha, "base_tip_sha": snapshot.base_tip_sha,
                 "checked_out_sha": snapshot.head_sha if source["mode"] == "pr_head" else cert_sha,
@@ -395,6 +574,8 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             require(initial_outcome is None, "platform_execution_unconfirmed")
             expected_producer = {"repository_id": selector["producer_repository_id"], "workflow_path": selector["producer_path"],
                 "workflow_sha": selector["producer_sha"], "run_id": evidence["run_id"], "attempt": evidence["attempt"], "job_id": job["id"]}
+            if decision_v2:
+                require(receipt["producer"]["attempt"] == evidence["attempt"], "receipt_attempt_mismatch")
             require(_strict_equal(receipt["producer"], expected_producer), "receipt_execution_mismatch")
             repository = _api(producer_repository, "/repos/" + producer["repository_full_name"])
             require(type(repository) is dict and type(repository.get("id")) is int
@@ -409,10 +590,13 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                        and row["path"].split("@", 1)[0] == reference_path]
             require(len(matched) == 1 and matched[0].get("sha") == selector["producer_sha"]
                     and matched[0]["path"] == reference_path + "@" + selector["producer_sha"], "referenced_producer_mismatch")
-            meta = loads_strict(artifact_metadata.body_bytes) if type(artifact_metadata) is RawApiFact else {}
-            artifact_id = meta.get("id") if type(meta) is dict else None
-            require(type(artifact_id) is int and 1 <= artifact_id <= 2**53 - 1, "artifact_identity_missing")
-            meta = _api(artifact_metadata, "/repos/" + snapshot.repository + "/actions/artifacts/" + str(artifact_id))
+            if decision_v2:
+                artifact_id, meta = _scoped_artifact_metadata(artifact_metadata, snapshot, observations, evidence, job)
+            else:
+                meta = loads_strict(artifact_metadata.body_bytes) if type(artifact_metadata) is RawApiFact else {}
+                artifact_id = meta.get("id") if type(meta) is dict else None
+                require(type(artifact_id) is int and 1 <= artifact_id <= 2**53 - 1, "artifact_identity_missing")
+                meta = _api(artifact_metadata, "/repos/" + snapshot.repository + "/actions/artifacts/" + str(artifact_id))
             evidence["artifact_id"] = artifact_id
             require(meta.get("digest") == "sha256:" + artifact.archive_sha256
                     and type(meta.get("size_in_bytes")) is int and meta["size_in_bytes"] == artifact.archive_size_bytes,
@@ -444,6 +628,12 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                 # authorize anything without the fresh verification above.
                 _attestation_execution(attestation_retention, expected, artifact.archive_bytes)
             _qualification(qualification, selector, source["mode"])
+            if "matrix" in selector:
+                measured = qualified_matrix(requirement, qualification, source["mode"])
+                evidence.update(job_name=selector["job_name"], matrix=measured)
+                diagnostics["matrix_binding"] = {"platform_job_name": job["name"], "job_name": selector["job_name"],
+                    "matrix": measured, "qualification_receipt_sha256": qualification.qualification_receipt_sha256}
+                retain("matrix-binding.json", canonical_bytes(diagnostics["matrix_binding"]) + b"\n")
             evidence.update(binding_level="workflow_bound", producer_proof={"method": "github_api_referenced_workflow",
                 "repository_id": selector["producer_repository_id"], "path": selector["producer_path"], "sha": selector["producer_sha"],
                 "api_response_sha256": attempt_record["body"]["sha256"]},
@@ -459,6 +649,15 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             if counts["failed"] or counts["errors"]:
                 evidence["conclusion"] = "failure"
                 problems.append(("failed", "observed_test_failure"))
+                # Exit 2 also covers interrupts. Only the qualified pytest
+                # dialect's explicit collection-error records establish this
+                # narrower phase; arbitrary exception text does not.
+                if (decision_v2 and native == 2 and counts["errors"] > 0
+                        and not counts["passed"] and not counts["failed"]
+                        and all(case["detail"]["tag"] == "error"
+                            and case["detail"]["attributes"]["message"] == "collection failure"
+                            for case in junit["cases"] if case["outcome"] == "errors")):
+                    problems.append(("failed", "pytest_collection_error"))
                 effect = "block"
             elif native in {1, 2, 3, 4}:
                 problems.append(("error", "pytest_error_without_junit_error"))
@@ -466,9 +665,13 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             elif sum(counts.values()) == 0:
                 evidence["conclusion"] = "neutral"
                 problems.append(("missing", "zero_tests"))
+                if decision_v2:
+                    effect = "block"
             elif counts["passed"] == 0:
                 evidence["conclusion"] = "skipped"
                 problems.append(("missing", "all_tests_skipped"))
+                if decision_v2:
+                    effect = "block"
             elif counts["passed"] < selector["min_tests"]:
                 problems.append(("missing", "minimum_tests_unmet"))
             elif counts["skipped"] and not selector["allow_skips"]:
@@ -479,7 +682,38 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             # Do not copy raw parser/schema messages; they may embed PR bytes.
             code = str(exc) if re.fullmatch(r"[a-z][a-z0-9_]{0,100}", str(exc)) else "test_evidence_invalid"
             category = "untrusted" if code in {"attestation_missing", "attestation_verification_failed", "attestation_claims_unconfirmed",
-                "producer_not_qualified", "referenced_producer_missing", "platform_execution_unconfirmed", "api_fact_missing"} else "error"
+                "producer_not_qualified", "referenced_producer_missing", "platform_execution_unconfirmed", "api_fact_missing",
+                "event_merge_reference_missing", "matrix_runtime_unconfirmed", "matrix_runtime_mismatch"} else "error"
+            # Profile v2 opts into the frozen negative-case dispositions. Do
+            # not retroactively change historical v1 replay or block merely
+            # because evidence is absent, untrusted or generically malformed.
+            if decision_v2:
+                disposition = {
+                    "artifact_transport_digest_mismatch": ("error", "artifact_digest_mismatch", "block"),
+                    "receipt_attempt_mismatch": ("mismatch", "receipt_attempt_mismatch", "block"),
+                    "referenced_producer_missing": ("untrusted", "producer_version_not_independently_bound", "clear"),
+                    "referenced_producer_mismatch": ("untrusted", "producer_version_not_independently_bound", "clear"),
+                    "unsafe_zip_path": ("error", "archive_path_traversal_rejected", "block"),
+                    "unsafe_junit_xml": ("error", "xml_external_entity_rejected", "block"),
+                }.get(code)
+                if disposition is not None:
+                    category, reason, disposition_effect = disposition
+                    problems.append((category, reason))
+                    if disposition_effect == "block":
+                        effect = "block"
+            if scoped_refusals and event_source_basis == "github_merge_reference_v1":
+                disposition = {
+                    "event_merge_parent_mismatch": ("mismatch", "merge_parents_mismatch", "block"),
+                    "event_merge_parent_proof_missing": ("untrusted", "event_merge_parent_proof_missing", "clear"),
+                    "event_merge_source_unsupported": ("unsupported", "tested_source_mode_unsupported", "clear"),
+                }.get(code)
+                if disposition is not None:
+                    category, reason, disposition_effect = disposition
+                    problems.append((category, reason))
+                    if disposition_effect == "block":
+                        effect = "block"
+            if scoped_refusals and code == "junit_missing":
+                category = "missing"
             problems.append((category, code))
     priority = {"error": 8, "mismatch": 7, "untrusted": 6, "unavailable": 5, "unsupported": 4, "missing": 3, "pending": 2, "failed": 1}
     outcome = max((item[0] for item in problems), key=priority.get, default="satisfied")
@@ -487,6 +721,10 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         outcome = "untrusted"
         problems.append((outcome, "test_binding_unconfirmed"))
     reasons = sorted({item[1] for item in problems})
+    if scoped_refusals:
+        from .execution_history import execution_reason_aliases
+        reasons = sorted(set(reasons) | set(execution_reason_aliases(capture,
+            workflow_id=selector["workflow_id"], outcome=outcome, effect=effect)))
     evidence["messages"] = reasons
     if outcome == "error":
         evidence["status"] = "error"
