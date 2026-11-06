@@ -4,6 +4,8 @@ Milestone: **implementation toward complete open-source 1.0**.
 M0 contract v1 and preregistered acceptance cases remain frozen.
 Product release: **not released** (`1.0.0.dev0` development build).
 Required gates and pending evidence: [RELEASE-1.0.md](docs/RELEASE-1.0.md).
+Observed development results, exact sources and retained failures:
+[2026-11-06 qualification record](docs/qualification/2026-11-06-development.md).
 
 | Area | Status |
 | --- | --- |
@@ -13,7 +15,7 @@ Required gates and pending evidence: [RELEASE-1.0.md](docs/RELEASE-1.0.md).
 | Engine wheel SHA-256, METADATA and RECORD verification | Completed for three candidates; see ENGINE-LOCK.md. |
 | Local M0 validation on Windows / Python 3.12 | PASS: 51 tests, 40 synthetic cases and 20 frozen files; see M0-VALIDATION.md. |
 | EC pool Windows / Python 3.12 CI | `m0-contracts` is the configured route; execution results are the per-commit `ec / m0-contracts` check and EC receipt. |
-| Linux CI | NOT_RUN; no qualified Linux pool lane. A local Ubuntu 24.04 WSL2 / Python 3.11.16 environment now runs focused development checks; full qualification remains pending. |
+| Linux CI | No qualified Linux pool lane. Clean native local Linux / official Python 3.11.16 passed all 535 tests, build and installed-package checks at `7355952`; this is separate from hosted product acceptance. |
 | Installed engine CLI/JSON adapters | Bounded static execution and native adapters implemented; real pinned CLI probes on Windows/Python 3.12 and Linux/Python 3.11. Full product qualification remains separate. See SPEC-003. |
 | Local evidence bundle and offline replay | Implemented for saved normalized observations; see EVIDENCE-BUNDLES.md. No provider mapping or producer authentication. |
 | SPEC-001 observation profile | Defined separately from readiness; strict profile schema/validator implemented. See docs/specs/SPEC-001-github-observations.md and ADR-001. |
@@ -23,7 +25,7 @@ Required gates and pending evidence: [RELEASE-1.0.md](docs/RELEASE-1.0.md).
 | Raw GitHub capture/reader, bounded GET transport and current-run/attempt/job/check mapping | Implemented with synthetic controls; see docs/GITHUB-OBSERVATIONS.md. Controlled live qualification remains pending. |
 | Observation inspect/verify/replay/refresh, final recheck and JSON/Markdown/HTML output | Implemented; raw replay dispatches the saved mapper version. Mapper 2 resolves narrowly qualified listing omissions under ADR-002; mapper 1 output remains byte-identical. No delivery readiness or producer claim. |
 | Installable CLI and source provenance | Development sdist/wheel build and an installed observation replay outside the source checkout completed. Bundled offline resources, clean-source identity and inventory controls implemented; exact-release qualification pending. |
-| Complete inspection policy identity | ADR-003 and strict profile validator bind acquisition/producer selectors to the frozen policy identity. This does not yet compose a full readiness report. |
+| Complete inspection policy identity | ADR-003 and strict profile validator bind acquisition/producer selectors to the frozen policy identity; the composer preserves that approved identity in the full report. |
 | Safe static source materialization | Bounded public/authenticated acquisition, exact object validation and offline restoration implemented; real public/private fetch feasibility passed both platforms. Full product source qualification pending. See SPEC-005. |
 | Artifact transport | Bounded metadata/ZIP/attestation acquisition, exact raw capture and versioned replay implemented. Signed locators are explicitly omitted; original archives and compressed bundles remain. See SPEC-007. |
 | Qualified producer workflow and pytest/JUnit parser | Parser, isolated producer candidate, official offline verifier and independent evidence binder implemented. Local Docker boundary controls passed; hosted producer registry remains empty pending qualification. See SPEC-004, SPEC-006 and SPEC-008. |

@@ -68,6 +68,7 @@ def validate_api_path(path: str) -> None:
     _locator(match.group(1))
     suffix = match.group("suffix") or ""
     simple = (not suffix or re.fullmatch(r"/pulls/" + _NUMBER, suffix)
+              or re.fullmatch(r"/git/ref/pull/" + _NUMBER + r"/merge", suffix)
               or re.fullmatch(r"/actions/workflows/" + _NUMBER, suffix)
               or re.fullmatch(r"/actions/runs/" + _NUMBER + r"(?:/attempts/" + _NUMBER + r")?", suffix)
               or re.fullmatch(r"/check-runs/" + _NUMBER, suffix))

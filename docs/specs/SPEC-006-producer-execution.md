@@ -253,7 +253,8 @@ selectors, job IDs, artifact identities, images or secrets. It targets an
 Ubuntu 24.04 GitHub-hosted Linux amd64 runner and Python 3.11.16. The supported
 event is a same-repository `pull_request`. Forks, Dependabot's distinct OIDC
 `dynamic` event, `pull_request_target`, custom merges and other execution modes
-are refused. This candidate has not yet been published or hosted-qualified.
+are refused. Publication and attempted hosted executions are recorded separately;
+neither makes an exact candidate revision hosted-qualified without its evidence.
 
 The inline bootstrap is byte-checked against `producer/bootstrap.py`. Before
 checking out any repository, it requests OIDC from the trusted runner's fixed
@@ -282,7 +283,14 @@ cross-checks repository, PR, run, exact attempt, complete job pagination and
 check metadata. It matches the OIDC check ID through the job's explicit
 `check_run_url`; job and check IDs need not be equal. It verifies GitHub Actions
 App ID, suite, exact job URL, full reusable workflow SHA and same-repository
-head/base identity. The event's OIDC SHA is separately obtained as a canonical
+head/base identity. Under [ADR-004](../amendments/ADR-004-github-merge-reference.md),
+the host additionally reads only the fixed
+`/repos/{repository}/git/ref/pull/{pr_number}/merge` route and retains its original
+body. The exact returned ref, commit type, full SHA and repository URLs must
+match the OIDC event identity; a missing field in the newer PR payload is not
+replaced by a guessed source. The deprecated PR merge field is ignored, even if
+present; reference/OIDC conflicts still refuse execution. The event's OIDC SHA
+is separately obtained as a canonical
 Git object and must have exactly `[base_tip, pr_head]` parents. The head workflow
 tests `pr_head`; the fixed merge workflow tests that actual merge snapshot.
 Original canonical commit bytes and independently measured source inventory
@@ -300,7 +308,8 @@ bound even for repetitive XML. Actual upload ID/digest outputs are passed throug
 environment variables to the host, never interpolated into shell source.
 
 Before signing, the host obtains a new OIDC observation and rechecks platform
-identity. It downloads the actual upload ID, independently hashes its ZIP and
+identity, including the exact merge reference. A moved reference or incompatible
+base/head relationship refuses signing of the earlier measurement. It downloads the actual upload ID, independently hashes its ZIP and
 checks platform digest plus exact receipt/JUnit bytes against the pre-upload
 inventory. Only then does it write the strict custom predicate and invoke pinned
 `actions/attest` with the actual artifact URL and ZIP digest. A fully measured
@@ -308,6 +317,12 @@ pytest failure is uploaded and signed, then the last fixed host step preserves
 the failure in job status. Incomplete boundary/parser/cleanup observations cannot
 produce an uploadable receipt. Raw guest output is captured as bytes and never
 sent to the Actions command processor.
+
+Platform acquisition preserves bounded original response bytes and safe metadata
+before rejecting a failed HTTP observation. Host diagnostics expose only fixed
+stage/route labels, allowlisted error codes and validated HTTP status or its absence;
+they do not print API bodies, credentials, arbitrary exceptions or guest text.
+These local failure captures are not uploaded as successful test evidence.
 
 The pinned action sources and the OIDC claims used by this candidate are
 [GitHub's OIDC reference](https://docs.github.com/en/actions/reference/security/oidc),

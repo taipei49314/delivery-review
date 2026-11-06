@@ -91,8 +91,11 @@ The hook performs the following work:
 
 1. Acquire and independently materialize exact static head/base Git objects.
    Keep original acquisition observations and exact compressed object bytes.
-2. Obtain the event-source Git commit when the PR reports a merge candidate;
-   establish its canonical hash and parents separately from the tested head.
+2. Obtain the original exact PR merge-reference HTTP response and then its
+   event-source Git commit by immutable SHA; establish its canonical hash and
+   ordered parents separately from the tested head. The API 2026-03-10 response
+   no longer supplies `PR.merge_commit_sha`; missing reference proof is retained
+   as a gap, with no guessed head source or synthetic PR field.
 3. Run each declared pinned static engine with full source SHAs and the bound
    native policy. The policy evaluation date comes from the original observation
    time, not the replay machine's clock.
@@ -156,6 +159,23 @@ The execution plan selects original engine inputs; it is not a saved decision.
 Replay reparses native output, validates pinned invocation/source/policy and
 retains original verdicts, findings and coverage. It does not read `report.json`
 as evidence and does not trust a saved adapter-success field.
+
+[ADR-004](../amendments/ADR-004-github-merge-reference.md) versions event-source
+interpretation inside this unchanged outer envelope. New plans contain exactly
+`engine_names`, `stage_errors`, `pr_url`, `plan_version: 2` and
+`event_source_basis: github_merge_reference_v1`. Original reference request facts
+and body bytes are saved under `raw/event-source/reference/request.json` and
+`body.bin`, independently of the original PR body and canonical
+`raw/event-source/commit.bin`. Both reference and commit proof are mandatory for
+that basis; an unavailable one cannot trigger legacy or PR-head fallback.
+
+The historical exact three-key plan has no `plan_version` and dispatches to
+`legacy_pr_field_v1`. It retains its old interpretation and ignores stray
+reference bytes. New readers reject unknown versions, bases and extra plan keys;
+old readers reject the new five-key shape. Replay never fetches a current ref or
+changes the saved basis. Refresh makes a new observation and explicit plan, while
+retaining the originally approved inspection profile and leaving the old envelope
+untouched. No original PR JSON is augmented to resemble an older API response.
 
 ## Replay audit and qualification
 

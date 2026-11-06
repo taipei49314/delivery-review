@@ -25,12 +25,12 @@ from .inspection_profile import load_inspection_profile
 from .producer_registry import qualified_producer
 from .providers.github_collect import collect_observations, utc_now
 from .providers.github_observations import map_capture
-from .providers.github_routes import API_VERSION, parse_pr_url, sha
+from .providers.github_routes import API_VERSION, parse_pr_url
 from .providers.github_source import acquire_source
 from .reporting import render_report_html, render_report_markdown
 from .source_snapshot import export_snapshot, restore_snapshot
 from .test_evidence import (EventSourceFact, RawApiFact, TestEvidenceInputs, bind_test_evidence,
-                           capture_payload, selected_job)
+                           capture_payload, merge_reference_identity, selected_job)
 
 
 @dataclass(frozen=True)
@@ -112,8 +112,11 @@ def _saved_fact(raw, prefix):
     request = loads_strict(raw[prefix + "/request.json"])
     require(type(request) is dict and set(request) == {"path", "status_code", "observed_at", "complete", "response_headers", "error"},
             "invalid_saved_api_fact")
+    # A complete-looking body accompanied by a transport error is unavailable
+    # evidence. Preserve the original request record; do not discard its error.
+    complete = request["complete"] if request["error"] is None else False
     return RawApiFact(request["path"], request["status_code"], raw.get(prefix + "/body.bin", b""),
-                      request["observed_at"], request["complete"], request["response_headers"])
+                      request["observed_at"], complete, request["response_headers"])
 
 
 def _attestation_from_saved(raw, prefix):
@@ -131,11 +134,31 @@ def _attestation_from_saved(raw, prefix):
     return AttestationExecution(Path.cwd(), manifest_bytes, MappingProxyType(files), b"{}")
 
 
-def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, writer=None, replay=False):
+def _execution_basis(plan):
+    """Dispatch original proof selection without upgrading historical plans."""
+    legacy = {"engine_names", "stage_errors", "pr_url"}
+    require(type(plan) is dict, "invalid_inspection_execution_plan")
+    if set(plan) == legacy:
+        basis = "legacy_pr_field_v1"
+    else:
+        require(set(plan) == legacy | {"plan_version", "event_source_basis"}
+            and type(plan["plan_version"]) is int and plan["plan_version"] == 2
+            and plan["event_source_basis"] == "github_merge_reference_v1", "unsupported_inspection_execution_plan")
+        basis = plan["event_source_basis"]
+    require(type(plan["engine_names"]) is list and all(type(name) is str for name in plan["engine_names"])
+        and len(plan["engine_names"]) == len(set(plan["engine_names"]))
+        and set(plan["engine_names"]) <= {"checkwash", "pinwash", "ledgerwash"}, "invalid_inspection_execution_plan")
+    return basis
+
+
+def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, writer=None, replay=False,
+                 event_source_basis="legacy_pr_field_v1"):
     from .evidence.artifacts import parse_artifact_capture, map_artifact_capture
     profile = load_inspection_profile(profile_bytes)
     inputs, audit = {}, {}
-    event = EventSourceFact(raw["event-source/commit.bin"]) if "event-source/commit.bin" in raw else None
+    require(event_source_basis in {"legacy_pr_field_v1", "github_merge_reference_v1"}, "unsupported_event_source_basis")
+    reference = _saved_fact(raw, "event-source/reference") if event_source_basis == "github_merge_reference_v1" else None
+    event = EventSourceFact(raw["event-source/commit.bin"], reference=reference) if "event-source/commit.bin" in raw else None
     gh_digest = _sha(_read(tools.gh_executable, 128 * 1024 * 1024))
     require(gh_digest in GH_PINS.values(), "unapproved_attestation_executable")
     trust = raw["trusted-root.jsonl"]
@@ -165,7 +188,7 @@ def _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, *, write
             if qualification is None or saved_receipt != qualification.qualification_receipt_bytes:
                 qualification = None
         values = TestEvidenceInputs(archive_bytes=artifact, artifact_metadata=metadata, producer_repository=producer,
-            event_source=event, qualification=qualification)
+            event_source=event, event_source_basis=event_source_basis, qualification=qualification)
         preflight = bind_test_evidence(profile_bytes=profile_bytes, capture=capture, snapshot=snapshot,
             requirement_id=identity, **{field.name: getattr(values, field.name) for field in fields(values)})
         expected = preflight.diagnostics["attestation_expected"]
@@ -214,6 +237,7 @@ def _publish(writer, composition, raw, *, collector, audit=None, derived_from=No
     references = set(composition.raw_files) | {"execution-plan.json", "trusted-root.jsonl"}
     references |= {name for name in raw if name in {"source/acquisition.json", "event-source/acquisition.json"}
                    or name.startswith("artifacts/") and name.endswith("/capture.json")}
+    references |= {name for name in raw if name in {"event-source/reference/request.json", "event-source/reference/body.bin"}}
     report["raw_inventory"] = [{"path": name, "size_bytes": len(raw[name]), "sha256": _sha(raw[name])}
                                for name in sorted(references)]
     policy = load_inspection_profile(raw["inspection-profile.json"])["policy"]
@@ -269,17 +293,28 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
             for oid, data in export_snapshot(snapshot).items():
                 _keep(writer, raw, "source/objects/" + oid + ".zlib", data)
             _, pr = capture_payload(initial, "pull_request")
-            merge = pr.get("merge_commit_sha")
-            if sha(merge):
-                try:
-                    event = acquire_source(runtime / "event-source", repository=profile["github"]["repository"],
-                        head_sha=merge, base_tip_sha=subject["base_tip_sha"], git_executable=tools.git_executable, token=token)
-                    _source_evidence(writer, raw, event, "event-source")
-                    content = export_snapshot(event.snapshot)[merge]
-                    _keep(writer, raw, "event-source/commit.bin", zlib.decompress(content))
-                except (ValueError, OSError):
-                    _failed_process_evidence(writer, raw, runtime / "event-source", "event-source", "source")
-                    stages["errors"].append("event_source_unavailable")
+            # API 2026-03-10 removed PR.merge_commit_sha. Preserve a distinct
+            # original ref response; never insert a replacement into PR JSON.
+            try:
+                repository = profile["github"]["repository"]["full_name"]
+                path = f"/repos/{repository}/git/ref/pull/{pr['number']}/merge"
+                response = platform_transport.get(path, api_version=API_VERSION, max_bytes=MAX_JSON_BYTES, timeout_seconds=30)
+                prefix = "event-source/reference"
+                _keep(writer, raw, prefix + "/request.json", canonical_bytes({"path": path, "status_code": response["status_code"],
+                    "observed_at": clock(), "response_headers": response["response_headers"], "complete": response["complete"],
+                    "error": response["error"]}) + b"\n")
+                if response["body"] is not None:
+                    _keep(writer, raw, prefix + "/body.bin", response["body"])
+                require(response["error"] is None, "event_reference_unavailable")
+                merge = merge_reference_identity(_saved_fact(raw, prefix), repository, pr["number"])
+                event = acquire_source(runtime / "event-source", repository=profile["github"]["repository"],
+                    head_sha=merge, base_tip_sha=subject["base_tip_sha"], git_executable=tools.git_executable, token=token)
+                _source_evidence(writer, raw, event, "event-source")
+                content = export_snapshot(event.snapshot)[merge]
+                _keep(writer, raw, "event-source/commit.bin", zlib.decompress(content))
+            except (ValueError, OSError):
+                _failed_process_evidence(writer, raw, runtime / "event-source", "event-source", "source")
+                stages["errors"].append("event_source_unavailable")
             names = {row["selector"]["engine"] for row in profile["policy"]["requirements"] if row["kind"] in {"scanner", "ledger"}}
             for name in sorted(names):
                 try:
@@ -332,7 +367,8 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
                 _keep(writer, raw, prefix + "/capture.json", acquired.manifest_bytes)
                 for name, data in acquired.raw_files.items():
                     _keep(writer, raw, prefix + "/" + name, data)
-            stages["test_inputs"], stages["audit"] = _test_inputs(profile_bytes, initial, snapshot, raw, tools, runtime)
+            stages["test_inputs"], stages["audit"] = _test_inputs(profile_bytes, initial, snapshot, raw, tools, runtime,
+                event_source_basis="github_merge_reference_v1")
         stages["errors"] = []
         capture = collect_observations(pr_url, canonical_bytes(profile["github"]) + b"\n", writer.root / "raw/github",
             transport=platform_transport, collector=collector, clock=clock, before_recheck=stage)
@@ -346,7 +382,8 @@ def inspect_pr(pr_url, profile_bytes, destination, *, tools: InspectionTools, co
                 "raw_capture_retained": True, "ready_for_review": False}) + b"\n")
             raise ValueError("inspection_source_unavailable")
         _keep(writer, raw, "execution-plan.json", canonical_bytes({"engine_names": sorted(executions),
-            "stage_errors": sorted(stages["errors"]), "pr_url": pr_url}) + b"\n")
+            "stage_errors": sorted(stages["errors"]), "pr_url": pr_url, "plan_version": 2,
+            "event_source_basis": "github_merge_reference_v1"}) + b"\n")
         report_id = "inspection-" + _sha(capture.manifest_bytes)[:40]
         composition = compose_report(profile_bytes=profile_bytes, capture=capture, snapshot=stages["snapshot"],
             engine_executions=executions, test_inputs=stages.get("test_inputs", {}), report_id=report_id, mode="live")
@@ -365,9 +402,7 @@ def replay_inspection(source, destination, *, tools: InspectionTools):
     capture = parse_capture(raw["github/capture.json"], raw["github/profile.json"],
         {name[len("github/"):]: data for name, data in raw.items() if name.startswith("github/raw/")})
     plan = loads_strict(raw["execution-plan.json"])
-    require(type(plan) is dict and set(plan) == {"engine_names", "stage_errors", "pr_url"}
-        and type(plan["engine_names"]) is list and len(plan["engine_names"]) == len(set(plan["engine_names"]))
-        and set(plan["engine_names"]) <= {"checkwash", "pinwash", "ledgerwash"}, "invalid_inspection_execution_plan")
+    basis = _execution_basis(plan)
     parse_pr_url(plan["pr_url"], profile["github"])
     with tempfile.TemporaryDirectory(prefix="delivery-review-replay-") as temporary:
         runtime = Path(temporary)
@@ -384,7 +419,7 @@ def replay_inspection(source, destination, *, tools: InspectionTools):
                     "invalid_saved_engine_streams")
             streams = {key: raw[prefix + "/" + key + ".bin"] for key in manifest["streams"]}
             executions[name] = EngineExecution(runtime, manifest_bytes, MappingProxyType(streams), b"{}")
-        inputs, audit = _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, replay=True)
+        inputs, audit = _test_inputs(profile_bytes, capture, snapshot, raw, tools, runtime, replay=True, event_source_basis=basis)
         composition = compose_report(profile_bytes=profile_bytes, capture=capture, snapshot=snapshot,
             engine_executions=executions, test_inputs=inputs, report_id=saved.manifest["report_id"], mode="offline_replay")
         return _publish(writer, composition, raw, collector=saved.manifest["collector"], audit=audit,

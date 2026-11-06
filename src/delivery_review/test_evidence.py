@@ -38,8 +38,9 @@ class RawApiFact:
 
 @dataclass(frozen=True)
 class EventSourceFact:
-    """Canonical Git object bytes (``commit <size>\\0<payload>``)."""
+    """Canonical Git commit bytes and an optional original merge-ref API fact."""
     commit_bytes: bytes
+    reference: RawApiFact | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ class TestEvidenceInputs:
     attestation_retention: attest.AttestationExecution | None = None
     event_source: EventSourceFact | None = None
     qualification: ProducerQualification | None = None
+    event_source_basis: str = "legacy_pr_field_v1"
 
 
 @dataclass(frozen=True)
@@ -197,7 +199,35 @@ def _api(fact, expected_path):
     return loads_strict(fact.body_bytes)
 
 
-def event_source_identity(event_source, snapshot, pr):
+def merge_reference_identity(reference, repository, pr_number):
+    """Validate the original fixed-route GitHub merge ref before any Git fetch."""
+    require(type(repository) is str and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+            and all(part not in {".", ".."} for part in repository.split("/")) and positive(pr_number),
+            "event_merge_reference_scope_invalid")
+    path = f"/repos/{repository}/git/ref/pull/{pr_number}/merge"
+    value = _api(reference, path)
+    require(type(value) is dict and value.get("ref") == f"refs/pull/{pr_number}/merge"
+            and type(value.get("object")) is dict, "event_merge_reference_invalid")
+    obj = value["object"]
+    sha = obj.get("sha")
+    require(obj.get("type") == "commit" and type(sha) is str and re.fullmatch(r"[0-9a-f]{40}", sha)
+            and obj.get("url") == f"https://api.github.com/repos/{repository}/git/commits/{sha}",
+            "event_merge_reference_invalid")
+    return sha
+
+
+def _event_source_basis(value):
+    require(type(value) is str and value in {"legacy_pr_field_v1", "github_merge_reference_v1"},
+            "event_source_basis_unsupported")
+
+
+def event_source_identity(event_source, snapshot, pr, *, event_source_basis="legacy_pr_field_v1"):
+    _event_source_basis(event_source_basis)
+    if event_source_basis == "github_merge_reference_v1":
+        require(type(event_source) is EventSourceFact and type(event_source.reference) is RawApiFact,
+                "event_merge_reference_missing")
+    elif type(event_source) is EventSourceFact:
+        require(event_source.reference is None, "event_source_basis_reference_conflict")
     if event_source is None:
         return snapshot.head_sha, []
     require(type(event_source) is EventSourceFact and type(event_source.commit_bytes) is bytes
@@ -206,6 +236,14 @@ def event_source_identity(event_source, snapshot, pr):
     require(header == b"commit " + str(len(payload)).encode(), "event_source_object_invalid")
     sha = hashlib.sha1(event_source.commit_bytes).hexdigest()
     _, parents = _commit(payload)
+    if event_source.reference is not None:
+        require(type(pr) is dict, "event_merge_reference_scope_invalid")
+        reference_sha = merge_reference_identity(event_source.reference, snapshot.repository, pr.get("number"))
+        require(sha == reference_sha, "event_merge_reference_sha_mismatch")
+        require(list(parents) == [snapshot.base_tip_sha, snapshot.head_sha], "event_merge_parent_mismatch")
+        return sha, list(parents)
+    # Only historical callers without a separate merge reference may use the
+    # deprecated PR field or the original head-commit shortcut.
     if sha == snapshot.head_sha:
         return sha, []
     require(sha == pr.get("merge_commit_sha") and list(parents) == [snapshot.base_tip_sha, snapshot.head_sha],
@@ -304,13 +342,14 @@ def _attestation_execution(execution, expected, archive):
 
 def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
         artifact=None, archive_bytes=None, artifact_metadata=None, producer_repository=None, attestation=None,
-        attestation_retention=None, event_source=None, qualification=None):
+        attestation_retention=None, event_source=None, qualification=None, event_source_basis="legacy_pr_field_v1"):
     """Derive one test obligation; missing/untrusted observations stay explicit.
 
     ``diagnostics.attestation_expected`` is available before cryptographic
     execution when sufficient raw claims exist. Run the official verifier with
     that expectation, then call again with its actual AttestationExecution.
     """
+    _event_source_basis(event_source_basis)
     profile, capture, observations = validated_context(profile_bytes, capture, snapshot)
     require(artifact is None or archive_bytes is None, "ambiguous_artifact_input")
     requirements = [row for row in profile["policy"]["requirements"] if row["id"] == requirement_id and row["kind"] == "test_report"]
@@ -323,13 +362,17 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
     def retain(name, raw):
         if type(raw) is bytes:
             files[prefix + name] = raw
-    for name, fact in (("artifact-metadata.json", artifact_metadata), ("producer-repository.json", producer_repository)):
+    for name, fact in (("artifact-metadata.json", artifact_metadata), ("producer-repository.json", producer_repository),
+            ("event-merge-reference.json", event_source.reference if type(event_source) is EventSourceFact else None)):
         if type(fact) is RawApiFact:
             retain(name, fact.body_bytes)
             retain(name + ".request.json", canonical_bytes({"path": fact.request_path, "status_code": fact.status_code,
                 "complete": fact.complete, "observed_at": fact.observed_at, "headers": dict(fact.headers)}) + b"\n")
     if type(event_source) is EventSourceFact:
         retain("event-source.git", event_source.commit_bytes)
+    if event_source_basis == "github_merge_reference_v1" and not (
+            type(event_source) is EventSourceFact and type(event_source.reference) is RawApiFact):
+        problems.append(("untrusted", "event_merge_reference_missing"))
     if type(qualification) is ProducerQualification:
         retain("qualification.json", qualification.qualification_receipt_bytes)
     retained_attestation = _retained_attestation(attestation, attestation_retention)
@@ -384,7 +427,7 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
                                  {key: observations["subject"][key] for key in ("repository_id", "head_repository_id", "pr_number")}),
                     "receipt_subject_identity_mismatch")
             _, pr = capture_payload(capture, "pull_request")
-            cert_sha, parents = event_source_identity(event_source, snapshot, pr)
+            cert_sha, parents = event_source_identity(event_source, snapshot, pr, event_source_basis=event_source_basis)
             source = receipt["source"]
             expected_source = {"mode": source["mode"], "head_sha": snapshot.head_sha, "base_tip_sha": snapshot.base_tip_sha,
                 "checked_out_sha": snapshot.head_sha if source["mode"] == "pr_head" else cert_sha,
@@ -479,7 +522,8 @@ def bind_test_evidence(*, profile_bytes, capture, snapshot, requirement_id,
             # Do not copy raw parser/schema messages; they may embed PR bytes.
             code = str(exc) if re.fullmatch(r"[a-z][a-z0-9_]{0,100}", str(exc)) else "test_evidence_invalid"
             category = "untrusted" if code in {"attestation_missing", "attestation_verification_failed", "attestation_claims_unconfirmed",
-                "producer_not_qualified", "referenced_producer_missing", "platform_execution_unconfirmed", "api_fact_missing"} else "error"
+                "producer_not_qualified", "referenced_producer_missing", "platform_execution_unconfirmed", "api_fact_missing",
+                "event_merge_reference_missing"} else "error"
             problems.append((category, code))
     priority = {"error": 8, "mismatch": 7, "untrusted": 6, "unavailable": 5, "unsupported": 4, "missing": 3, "pending": 2, "failed": 1}
     outcome = max((item[0] for item in problems), key=priority.get, default="satisfied")

@@ -25,7 +25,7 @@ from delivery_review.contracts import ContractError, canonical_bytes, loads_stri
 from delivery_review.inspection_profile import seal_inspection_profile
 from delivery_review.source_snapshot import materialize_snapshot
 from delivery_review.test_evidence import (EventSourceFact, ProducerQualification, RawApiFact,
-    TestEvidenceInputs, bind_test_evidence, event_source_identity)
+    TestEvidenceInputs, bind_test_evidence, event_source_identity, merge_reference_identity)
 from observation_fixtures import BASE, HEAD, NOW, CaptureFixture
 from test_github_attestation import authored_bundle, control as attestation_control
 from test_source_snapshot import fixture
@@ -158,6 +158,18 @@ class TestEvidenceBindingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.fixture = AuthoredInspection(Path(self.temp.name))
 
+    def merge_event(self, *, parents=None):
+        snapshot = self.fixture.snapshot
+        value = self.fixture.objects
+        merge = value.commit(value.files({"README.txt": b"authored merge-reference control"}),
+            [snapshot.base_tip_sha, snapshot.head_sha] if parents is None else parents)
+        payload = {"ref": "refs/pull/7/merge", "node_id": "authored", "url":
+            "https://api.github.com/repos/fixture-owner/fixture-repo/git/refs/pull/7/merge",
+            "object": {"type": "commit", "sha": merge,
+                "url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + merge}}
+        reference = fact("/repos/fixture-owner/fixture-repo/git/ref/pull/7/merge", payload)
+        return EventSourceFact(value.objects[merge], reference), merge, payload
+
     def test_authored_chain_binds_only_after_all_independent_inputs(self):
         first = bind_test_evidence(**self.fixture.args())
         self.assertEqual("untrusted", first.obligation["outcome"])
@@ -273,6 +285,137 @@ class TestEvidenceBindingTests(unittest.TestCase):
         bad = value.commit(value.files({"README.txt": b"wrong merge"}), [self.fixture.snapshot.head_sha, self.fixture.snapshot.base_tip_sha])
         result = self.fixture.bound(event_source=EventSourceFact(value.objects[bad]))
         self.assertIn("event_merge_parent_mismatch", result.obligation["reason_codes"])
+
+    def test_merge_reference_binds_omitted_pr_field_and_retains_original_bytes(self):
+        event, merge, payload = self.merge_event()
+        event = replace(event, reference=replace(event.reference,
+            body_bytes=b" \n" + json.dumps(payload, indent=2).encode() + b"\n"))
+        for phase in ("initial", "final"):
+            row = self.fixture.capture_fixture.find("pull_request", phase)
+            document = self.fixture.capture_fixture.payload(row)
+            document.pop("merge_commit_sha")
+            self.fixture.capture_fixture.set_payload(row, document)
+        before = dict(self.fixture.capture_fixture.bodies)
+        result = self.fixture.bound(event_source=event, event_source_basis="github_merge_reference_v1")
+        self.assertEqual("satisfied", result.obligation["outcome"], result.diagnostics)
+        self.assertEqual(merge, result.diagnostics["attestation_expected"]["certificate_source_sha"])
+        self.assertEqual(self.fixture.snapshot.head_sha, result.evidence["subject_sha"])
+        self.assertEqual(before, self.fixture.capture_fixture.bodies)
+        retained = next(raw for name, raw in result.raw_files.items() if name.endswith("/event-merge-reference.json"))
+        self.assertEqual(event.reference.body_bytes, retained)
+        request = next(loads_strict(raw) for name, raw in result.raw_files.items()
+            if name.endswith("/event-merge-reference.json.request.json"))
+        self.assertEqual(event.reference.request_path, request["path"])
+        self.assertEqual(200, request["status_code"])
+
+    def test_new_reference_basis_does_not_read_deprecated_pr_merge_field(self):
+        event, merge, unused = self.merge_event()
+        for legacy in (None, "f" * 40, merge):
+            pr = {"number": 7, "merge_commit_sha": legacy}
+            with self.subTest(legacy=legacy):
+                self.assertEqual((merge, [self.fixture.snapshot.base_tip_sha, self.fixture.snapshot.head_sha]),
+                    event_source_identity(event, self.fixture.snapshot, pr, event_source_basis="github_merge_reference_v1"))
+        bad = replace(event, reference=replace(event.reference, request_path=event.reference.request_path + "?fallback=1"))
+        with self.assertRaisesRegex(ContractError, "api_fact_route_mismatch"):
+            event_source_identity(bad, self.fixture.snapshot, {"number": 7, "merge_commit_sha": merge},
+                event_source_basis="github_merge_reference_v1")
+
+    def test_merge_reference_requires_exact_route_status_completeness_and_safe_headers(self):
+        event, unused, payload = self.merge_event()
+        changes = [
+            {"request_path": "/repos/other-owner/fixture-repo/git/ref/pull/7/merge"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/ref/pull/8/merge"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/ref/pull/7/head"},
+            {"request_path": "/repos/fixture-owner/fixture-repo/git/matching-refs/pull/7/merge"},
+            {"request_path": event.reference.request_path + "?page=1"},
+            {"status_code": 404}, {"status_code": True}, {"complete": False}, {"complete": 1},
+            {"observed_at": "2026-11-06"}, {"headers": {"authorization": "authored unsafe header"}},
+        ]
+        for change in changes:
+            reference = replace(event.reference, **change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                merge_reference_identity(reference, self.fixture.snapshot.repository, 7)
+        bad = replace(event, reference=replace(event.reference, status_code=404))
+        result = self.fixture.bound(event_source=bad, event_source_basis="github_merge_reference_v1")
+        self.assertIsNone(result.diagnostics["attestation_expected"])
+        self.assertNotEqual("satisfied", result.obligation["outcome"])
+        self.assertIn(bad.reference.body_bytes, result.raw_files.values())
+        request = next(loads_strict(raw) for name, raw in result.raw_files.items()
+            if name.endswith("/event-merge-reference.json.request.json"))
+        self.assertEqual(404, request["status_code"])
+
+    def test_merge_reference_rejects_noncommit_ambiguous_json_and_noncanonical_identity(self):
+        event, merge, payload = self.merge_event()
+        changes = [({"ref": "refs/pull/8/merge"}, {}), ({"ref": "refs/heads/merge"}, {}),
+            ({}, {"type": "tag"}), ({}, {"sha": merge[:12]}), ({}, {"sha": merge.upper()}),
+            ({}, {"sha": "g" * 40}), ({}, {"url": "https://api.github.com/repos/other/repo/git/commits/" + merge}),
+            ({}, {"url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + merge + "?x=1"}),
+            ({}, {"url": "https://api.github.com.evil.example/repos/fixture-owner/fixture-repo/git/commits/" + merge})]
+        bodies = [b"[]", b'{"ref":"refs/pull/7/merge","ref":"refs/pull/7/merge","object":{}}']
+        for top, obj in changes:
+            document = deepcopy(payload)
+            document.update(top)
+            document["object"].update(obj)
+            bodies.append(canonical_bytes(document))
+        for raw in bodies:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                merge_reference_identity(replace(event.reference, body_bytes=raw), self.fixture.snapshot.repository, 7)
+        for repository, number in (("fixture-owner/../escape", 7), ("fixture-owner/fixture-repo", True),
+                ("fixture-owner/fixture-repo", 0), ("fixture-owner/fixture-repo", "7")):
+            with self.subTest(repository=repository, number=number), self.assertRaises(ContractError):
+                merge_reference_identity(event.reference, repository, number)
+
+    def test_merge_reference_requires_original_commit_hash_and_exact_ordered_parents(self):
+        event, unused, payload = self.merge_event()
+        snapshot = self.fixture.snapshot
+        for parents in ([snapshot.head_sha, snapshot.base_tip_sha], [snapshot.base_tip_sha],
+                [snapshot.base_tip_sha, snapshot.head_sha, "e" * 40], ["d" * 40, snapshot.head_sha]):
+            bad, unused, unused_payload = self.merge_event(parents=parents)
+            with self.subTest(parents=parents), self.assertRaisesRegex(ContractError, "event_merge_parent_mismatch"):
+                event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+        bad = replace(event, commit_bytes=event.commit_bytes[:-1] + b"!")
+        with self.assertRaisesRegex(ContractError, "event_merge_reference_sha_mismatch"):
+            event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+        head_reference = deepcopy(payload)
+        head_reference["object"].update(sha=snapshot.head_sha,
+            url="https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + snapshot.head_sha)
+        bad = EventSourceFact(self.fixture.objects.objects[snapshot.head_sha],
+            replace(event.reference, body_bytes=canonical_bytes(head_reference)))
+        with self.assertRaisesRegex(ContractError, "event_merge_parent_mismatch"):
+            event_source_identity(bad, snapshot, {"number": 7}, event_source_basis="github_merge_reference_v1")
+
+    def test_new_basis_cannot_fall_back_when_event_or_reference_is_missing(self):
+        event, unused, unused_payload = self.merge_event()
+        for supplied in (None, EventSourceFact(self.fixture.objects.objects[self.fixture.snapshot.head_sha]),
+                replace(event, reference=None)):
+            with self.subTest(supplied=supplied):
+                result = self.fixture.bound(event_source=supplied, event_source_basis="github_merge_reference_v1")
+                self.assertEqual("untrusted", result.obligation["outcome"])
+                self.assertIn("event_merge_reference_missing", result.obligation["reason_codes"])
+                self.assertIsNone(result.diagnostics["attestation_expected"])
+        self.assertEqual("satisfied", self.fixture.bound().obligation["outcome"])
+
+    def test_missing_new_reference_keeps_the_independent_ci_block(self):
+        for role in ("jobs", "check_run"):
+            row = self.fixture.capture_fixture.find(role)
+            payload = self.fixture.capture_fixture.payload(row)
+            (payload["jobs"][0] if role == "jobs" else payload)["conclusion"] = "failure"
+            self.fixture.capture_fixture.set_payload(row, payload)
+        result = self.fixture.bound(artifact=None, event_source_basis="github_merge_reference_v1")
+        self.assertEqual("untrusted", result.obligation["outcome"])
+        self.assertEqual("block", result.obligation["effect"])
+        self.assertEqual({"artifact_missing", "event_merge_reference_missing"}, set(result.obligation["reason_codes"]))
+        self.assertIsNone(result.diagnostics["attestation_expected"])
+
+    def test_explicit_event_source_basis_rejects_unknown_or_mixed_interpretations(self):
+        self.assertEqual("legacy_pr_field_v1", TestEvidenceInputs().event_source_basis)
+        for basis in ("unknown_v2", None, 2):
+            with self.subTest(basis=basis), self.assertRaisesRegex(ContractError, "event_source_basis_unsupported"):
+                bind_test_evidence(**self.fixture.args(event_source_basis=basis))
+        event, unused, unused_payload = self.merge_event()
+        result = self.fixture.bound(event_source=event, event_source_basis="legacy_pr_field_v1")
+        self.assertIn("event_source_basis_reference_conflict", result.obligation["reason_codes"])
+        self.assertIsNone(result.diagnostics["attestation_expected"])
 
     def test_mutated_source_and_unapproved_profile_are_rejected_before_composition(self):
         profile = deepcopy(self.fixture.profile)

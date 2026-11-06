@@ -202,7 +202,8 @@ def compose_report(*, profile_bytes, capture, snapshot, engine_executions, test_
             test_diagnostics[requirement["id"]] = result.diagnostics
             if values.event_source is not None:
                 try:
-                    event_sha, parents = event_source_identity(values.event_source, snapshot, pr)
+                    event_sha, parents = event_source_identity(values.event_source, snapshot, pr,
+                        event_source_basis=values.event_source_basis)
                     if parents:
                         subject.update(merge_commit_sha=event_sha, merge_parents=parents)
                 except (ValueError, TypeError, KeyError):

@@ -43,7 +43,10 @@ def fixture():
     data = {'repository': repository,
         'producer_repository': {'id': PRODUCER_REPOSITORY_ID, 'full_name': PRODUCER_REPOSITORY},
         'pull_request': {'number': 7, 'state': 'open', 'head': {'repo': repository, 'sha': 'b' * 40},
-                         'base': {'repo': repository, 'sha': 'a' * 40}, 'merge_commit_sha': 'c' * 40},
+                         'base': {'repo': repository, 'sha': 'a' * 40}},
+        'merge_ref': {'ref': 'refs/pull/7/merge', 'url': 'https://api.github.com/repos/authored/reference/git/refs/pull/7/merge',
+            'object': {'type': 'commit', 'sha': 'c' * 40,
+                       'url': 'https://api.github.com/repos/authored/reference/git/commits/' + 'c' * 40}},
         'run': run, 'attempt': deepcopy(run),
         'jobs': [{'id': 2001, 'run_id': 1001, 'head_sha': 'b' * 40, 'name': 'pytest-linux',
                   'status': 'in_progress', 'conclusion': None, 'html_url': url,
@@ -143,7 +146,7 @@ class ProducerPlatformTests(unittest.TestCase):
     def test_source_run_attempt_and_producer_substitutions_fail(self):
         claims, _, data = fixture()
         for mutator in [lambda d: d['pull_request']['head']['repo'].update(id=9002),
-                        lambda d: d['pull_request'].update(merge_commit_sha='e' * 40),
+                        lambda d: d['merge_ref']['object'].update(sha='e' * 40),
                         lambda d: d['pull_request']['head'].update(sha='e' * 40),
                         lambda d: d['attempt'].update(run_attempt=1),
                         lambda d: d['run'].update(event='push'),
@@ -160,6 +163,7 @@ class ProducerPlatformTests(unittest.TestCase):
         by_route = {'/repos/authored/reference': data['repository'],
             '/repos/' + PRODUCER_REPOSITORY: data['producer_repository'],
             '/repos/authored/reference/pulls/7': data['pull_request'],
+            '/repos/authored/reference/git/ref/pull/7/merge': data['merge_ref'],
             '/repos/authored/reference/actions/runs/1001': data['run'],
             '/repos/authored/reference/actions/runs/1001/attempts/2': data['attempt'],
             '/repos/authored/reference/check-runs/3001': data['check'],
@@ -174,9 +178,35 @@ class ProducerPlatformTests(unittest.TestCase):
             result = collect_identity(claims, transport=Transport(), destination=root / 'first')
             self.assertEqual(2001, result['job_id'])
             self.assertEqual(json.dumps(data['run'], indent=1).encode() + b'\r\n', (root / 'first/run.json').read_bytes())
+            self.assertEqual(json.dumps(data['merge_ref'], indent=1).encode() + b'\r\n',
+                             (root / 'first/merge_ref.json').read_bytes())
+            with patch('producer.platform_identity.derive_identity', side_effect=BootstrapError('AUTHORED_SECRET')), \
+                    patch('builtins.print') as output, self.assertRaises(BootstrapError):
+                collect_identity(claims, transport=Transport(), destination=root / 'unknown-failure')
+            output.assert_called_once_with('delivery-review: platform identity refused code=platform_identity_refused', flush=True)
+            self.assertEqual({'code': 'platform_identity_refused'}, json.loads((root / 'unknown-failure/failure.json').read_bytes()))
             by_route[next(key for key in by_route if '/jobs?' in key)]['total_count'] = 2
             with self.assertRaisesRegex(BootstrapError, 'job_pagination_incomplete'):
                 collect_identity(claims, transport=Transport(), destination=root / 'partial')
+
+    def test_failed_http_response_keeps_original_bytes_and_only_safe_diagnostics(self):
+        claims, _, _ = fixture()
+        raw = b'{"message":"AUTHORED_SECRET ::error::not a workflow command"}\r\n'
+        class Transport:
+            def get(self, path, **kwargs):
+                return {'status_code': 403, 'complete': True, 'error': {'code': 'resource_unavailable'},
+                        'response_headers': {'content-type': 'application/json'}, 'body': raw}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'failed'
+            with patch('builtins.print') as output, self.assertRaisesRegex(BootstrapError, 'platform_response_unavailable'):
+                collect_identity(claims, transport=Transport(), destination=root)
+            output.assert_called_once_with('delivery-review: platform response refused route=repository status=403 code=resource_unavailable', flush=True)
+            self.assertEqual(raw, (root / 'repository.json').read_bytes())
+            response = json.loads((root / 'repository.response.json').read_bytes())
+            self.assertEqual(403, response['status_code'])
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), response['sha256'])
+            self.assertEqual({'code': 'resource_unavailable'}, response['error'])
+            self.assertFalse((root / 'manifest.json').exists())
 
     def test_predicate_binds_actual_upload_and_exact_measured_members(self):
         claims, _, data = fixture(); identity = derive_identity(claims, **data)
@@ -209,6 +239,25 @@ class ProducerPlatformTests(unittest.TestCase):
         self.assertNotIn('secrets: inherit', workflow)
         self.assertIn('workflow_call: {}', workflow)
         self.assertIn('compression-level: 0', workflow)
+
+    def test_current_api_without_deprecated_merge_field_requires_exact_platform_ref(self):
+        claims, _, data = fixture()
+        self.assertNotIn('merge_commit_sha', data['pull_request'])
+        self.assertEqual('c' * 40, derive_identity(claims, **data)['event_source_sha'])
+        for obsolete in (None, 'e' * 40):
+            changed = deepcopy(data); changed['pull_request']['merge_commit_sha'] = obsolete
+            self.assertEqual('c' * 40, derive_identity(claims, **changed)['event_source_sha'])
+        for mutate in (lambda d: d.update(merge_ref=None),
+                       lambda d: d['merge_ref'].update(ref='refs/pull/8/merge'),
+                       lambda d: d['merge_ref'].update(ref='refs/pull/7/head'),
+                       lambda d: d['merge_ref'].update(url='https://api.github.com/repos/authored/other/git/refs/pull/7/merge'),
+                       lambda d: d['merge_ref']['object'].update(type='tag'),
+                       lambda d: d['merge_ref']['object'].update(sha='e' * 40),
+                       lambda d: d['merge_ref']['object'].update(sha='c' * 7),
+                       lambda d: d['merge_ref']['object'].update(url='https://api.github.com/repos/authored/other/git/commits/' + 'c' * 40)):
+            changed = deepcopy(data); mutate(changed)
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(BootstrapError, 'event_source_ref_mismatch'):
+                derive_identity(claims, **changed)
 
     def test_event_merge_identity_requires_original_git_parents_not_tree_similarity(self):
         objects, common, base, head = source_fixtures.fixture()

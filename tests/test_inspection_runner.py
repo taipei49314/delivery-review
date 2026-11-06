@@ -20,8 +20,9 @@ from delivery_review.adapters import github_attestation as attest
 from delivery_review.contracts import ContractError, canonical_bytes, loads_strict
 from delivery_review.evidence.inspection import verify_inspection
 from delivery_review.evidence.inspection import InspectionWriter
-from delivery_review.test_evidence import bind_test_evidence
-from test_test_evidence import AuthoredInspection, digest
+from delivery_review.test_evidence import EventSourceFact, bind_test_evidence
+from delivery_review.source_snapshot import _commit, materialize_snapshot
+from test_test_evidence import AuthoredInspection, digest, fact
 from test_composition import authored_engine
 from test_github_collect import ScriptedTransport
 from test_artifact_acquisition import ArtifactTransport, AttestationTransport, response, discovery
@@ -36,13 +37,23 @@ class InspectionRunnerTests(unittest.TestCase):
         fixture_root = self.root / "fixture"
         fixture_root.mkdir()
         self.fixture = AuthoredInspection(fixture_root)
+        tree, _ = _commit(self.fixture.objects.objects[self.fixture.snapshot.head_sha].split(b"\0", 1)[1])
+        self.merge_sha = self.fixture.objects.commit(tree,
+            [self.fixture.snapshot.base_tip_sha, self.fixture.snapshot.head_sha])
+        self.event_snapshot = materialize_snapshot(fixture_root / "event-source", repository=self.fixture.snapshot.repository,
+            head_sha=self.merge_sha, base_tip_sha=self.fixture.snapshot.base_tip_sha,
+            objects=self.fixture.objects.objects, git_executable=shutil.which("git"))
+        self.reference_path = "/repos/fixture-owner/fixture-repo/git/ref/pull/7/merge"
+        self.reference_payload = {"ref": "refs/pull/7/merge", "object": {"type": "commit", "sha": self.merge_sha,
+            "url": "https://api.github.com/repos/fixture-owner/fixture-repo/git/commits/" + self.merge_sha}}
         for row in self.fixture.capture_fixture.records:
             if row["role"] == "pull_request":
                 payload = self.fixture.capture_fixture.payload(row)
-                payload["merge_commit_sha"] = None
+                payload.pop("merge_commit_sha", None)
                 self.fixture.capture_fixture.set_payload(row, payload)
         self.capture = self.fixture.capture_fixture.seal()
-        first = bind_test_evidence(**self.fixture.args())
+        first = bind_test_evidence(**self.fixture.args(event_source=EventSourceFact(self.fixture.objects.objects[self.merge_sha],
+            reference=fact(self.reference_path, self.reference_payload)), event_source_basis="github_merge_reference_v1"))
         self.proof = self.fixture.fake_attestation(first.diagnostics["attestation_expected"])
         gh = self.root / "authored-gh.bin"
         gh.write_bytes(b"Authored placeholder, never executed")
@@ -58,13 +69,19 @@ class InspectionRunnerTests(unittest.TestCase):
         self.events = []
 
     def live(self, name="live", *, qualified=True, malformed_zip=False, source_error=False,
-             crypto_fail=False, crypto_unavailable=False):
+             crypto_fail=False, crypto_unavailable=False, reference_error=False, event_error=False):
         scripted = ScriptedTransport(self.capture)
-        fixture, events = self.fixture, self.events
+        fixture, events, owner = self.fixture, self.events, self
         class Platform:
             def get(self, path, **kwargs):
                 if path == "/repos/fixture-owner/producer":
                     return response({"id": 9002, "full_name": "fixture-owner/producer"})["response"]
+                if path == owner.reference_path:
+                    events.append("merge_reference")
+                    value = response({"message": "Authored missing ref"} if reference_error else owner.reference_payload)["response"]
+                    if reference_error:
+                        value["status_code"] = 404
+                    return value
                 if scripted.pending[0]["phase"] == "final":
                     events.append("final_recheck")
                 return scripted.get(path, **kwargs)
@@ -76,7 +93,10 @@ class InspectionRunnerTests(unittest.TestCase):
             events.append("source")
             if source_error:
                 raise ContractError("authored_source_failure")
-            return SimpleNamespace(directory=fixture.root, snapshot=fixture.snapshot,
+            selected = owner.event_snapshot if kwargs["head_sha"] == owner.merge_sha else fixture.snapshot
+            if event_error and selected is owner.event_snapshot:
+                raise ContractError("authored_event_source_failure")
+            return SimpleNamespace(directory=fixture.root, snapshot=selected,
                 evidence_bytes=canonical_bytes({"origin": "authored-source-controller", "processes": [], "quarantine_files": []}))
         def engine(snapshot, *, engine_name, **kwargs):
             events.append(engine_name)
@@ -133,6 +153,13 @@ class InspectionRunnerTests(unittest.TestCase):
         self.assertTrue(live["ready_for_review"])
         self.assertLess(self.events.index("crypto"), self.events.index("final_recheck"))
         before = verify_inspection(self.root / "live")
+        plan = loads_strict(before.files["raw/execution-plan.json"])
+        self.assertEqual(2, plan["plan_version"])
+        self.assertEqual("github_merge_reference_v1", plan["event_source_basis"])
+        self.assertEqual(response(self.reference_payload)["response"]["body"], before.files["raw/event-source/reference/body.bin"])
+        for row in self.capture.manifest["records"]:
+            if row["role"] == "pull_request":
+                self.assertNotIn("merge_commit_sha", loads_strict(before.files["raw/github/" + row["body"]["path"]]))
         first = self.replay("replay-1")
         second = self.replay("replay-2")
         self.assertEqual(first, second)
@@ -150,6 +177,45 @@ class InspectionRunnerTests(unittest.TestCase):
         self.assertEqual("incomplete", report["state"]["evidence"])
         self.assertFalse(report["ready_for_review"])
         self.assertIn("producer_not_qualified", next(o for o in report["obligations"] if o["id"] == "pytest-linux")["reason_codes"])
+
+    def test_missing_ref_or_canonical_event_object_cannot_fall_back_to_head(self):
+        for name, options in (("missing-ref", {"reference_error": True}), ("missing-event", {"event_error": True})):
+            with self.subTest(name=name):
+                report = self.live(name, **options)
+                self.assertNotEqual("complete", report["state"]["evidence"])
+                self.assertFalse(report["ready_for_review"])
+                saved = verify_inspection(self.root / name)
+                self.assertNotIn("raw/event-source/commit.bin", saved.files)
+                request = loads_strict(saved.files["raw/event-source/reference/request.json"])
+                self.assertEqual(404 if options.get("reference_error") else 200, request["status_code"])
+        self.assertNotIn("crypto", self.events)
+
+    def test_execution_plan_versions_dispatch_without_implicit_upgrade(self):
+        legacy = {"engine_names": ["checkwash"], "stage_errors": [], "pr_url": "https://github.com/fixture-owner/fixture-repo/pull/7"}
+        self.assertEqual("legacy_pr_field_v1", runner._execution_basis(legacy))
+        current = dict(legacy, plan_version=2, event_source_basis="github_merge_reference_v1")
+        self.assertEqual("github_merge_reference_v1", runner._execution_basis(current))
+        for change in ({"plan_version": 3}, {"plan_version": True}, {"event_source_basis": "legacy_pr_field_v1"},
+                       {"event_source_basis": None}, {"future": True}):
+            with self.subTest(change=change), self.assertRaises(ContractError):
+                runner._execution_basis(dict(current, **change))
+        with self.assertRaises(ContractError):
+            runner._execution_basis(dict(legacy, event_source_basis="github_merge_reference_v1"))
+
+    def test_legacy_plan_ignores_new_reference_files_and_transport_errors_remain_unavailable(self):
+        raw = {"trusted-root.jsonl": self.fixture.trusted_root,
+            "event-source/commit.bin": self.fixture.objects.objects[self.merge_sha],
+            "event-source/reference/request.json": b"invalid authored reference that legacy must not interpret"}
+        with patch.object(runner, "qualified_producer", return_value=None), patch.object(runner, "bind_test_evidence",
+                return_value=SimpleNamespace(diagnostics={"attestation_expected": None})):
+            inputs, _ = runner._test_inputs(self.fixture.profile_bytes, self.capture, self.fixture.snapshot,
+                raw, self.tools, self.root, event_source_basis="legacy_pr_field_v1")
+        self.assertIsNone(inputs["pytest-linux"].event_source.reference)
+        self.assertEqual("legacy_pr_field_v1", inputs["pytest-linux"].event_source_basis)
+        raw["event-source/reference/request.json"] = canonical_bytes({"path": self.reference_path, "status_code": 200,
+            "observed_at": NOW, "complete": True, "response_headers": {}, "error": "transport_failure"})
+        raw["event-source/reference/body.bin"] = canonical_bytes(self.reference_payload)
+        self.assertFalse(runner._saved_fact(raw, "event-source/reference").complete)
 
     def test_replay_cannot_add_later_producer_qualification_to_original_evidence(self):
         self.live(qualified=False)

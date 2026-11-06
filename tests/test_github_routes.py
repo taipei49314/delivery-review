@@ -35,6 +35,18 @@ class GitHubRouteTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(ContractError):
                 validate_api_path(path)
 
+    def test_merge_ref_transport_route_is_exact_and_does_not_expand_historical_roles(self):
+        validate_api_path('/repos/fixture-owner/fixture-repo/git/ref/pull/7/merge')
+        for suffix in ('/git/ref/pull/0/merge', '/git/ref/pull/01/merge',
+                       '/git/ref/pull/9007199254740992/merge', '/git/ref/pull/7/head',
+                       '/git/ref/heads/main', '/git/refs/pull/7/merge', '/git/ref/pull/7/merge/',
+                       '/git/ref/pull/7/merge?token=secret', '/git/ref/pull/7%2Fmerge',
+                       '/commits/refs%2Fpull%2F7%2Fmerge', '/git/commits/' + 'a' * 40):
+            with self.subTest(suffix=suffix), self.assertRaises(ContractError):
+                validate_api_path('/repos/fixture-owner/fixture-repo' + suffix)
+        with self.assertRaisesRegex(ContractError, 'unsupported_request_role'):
+            request_path(self.profile, 'merge_ref', pr_number=7)
+
     def test_links_retain_page_limit_diagnostics_but_cannot_change_scope(self):
         next_path = self.path.replace("page=1&", "page=2&")
         headers = {"link": f'<https://api.github.com{next_path}>; rel="next"'}
